@@ -182,6 +182,13 @@ function keyboardInCanvas(event: KeyboardEvent): boolean {
 }
 
 window.addEventListener('keydown', (event) => {
+  // WebKit may leave focus on body after a mouse click on a palette button.
+  // Escape must still dismiss the palette even when the event is outside it.
+  if (event.key === 'Escape' && palette.isOpen) {
+    event.preventDefault();
+    palette.close();
+    return;
+  }
   if (!keyboardInCanvas(event)) return;
   if (event.key === 'Escape') {
     releaseGesture(true);

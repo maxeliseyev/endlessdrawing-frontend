@@ -16,6 +16,13 @@ describe('versioned browser storage', () => {
     expect(loadPreferences(storage)).toEqual({ ...prefs, color: '#AABBCC' });
   });
 
+  it.each(['chisel', 'spray'] as const)('restores %s with existing versioned preferences', (brush) => {
+    const storage = memory();
+    const prefs = { ...DEFAULT_PREFERENCES, brush, width: 48, opacity: 0.5 };
+    save(storage, STORAGE_KEYS.preferences, prefs);
+    expect(loadPreferences(storage)).toEqual(prefs);
+  });
+
   it.each([
     'broken JSON', 'null', '{"tool":"other"}',
     JSON.stringify({ ...DEFAULT_PREFERENCES, width: 65 }),

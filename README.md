@@ -10,7 +10,9 @@
 
 Первый этап: **локальный desktop-прототип**, пока без WebSocket/backend. Штрихи находятся только в памяти страницы и исчезают после reload. Ластик/undo работают только с ними. Shared world, серверное сохранение, сессионное право удаления и reconnect — следующие этапы, не реализованные гарантии. Пометка локального режима видна в открытой палитре, но не перекрывает холст при запуске.
 
-Реализованы Canvas 2D, DPR/resize, камера, round/square, цвет/толщина/opacity, палитра, рука, wheel, Space/средняя кнопка, отмена жеста, локальные ластик и undo.
+Реализованы Canvas 2D, DPR/resize, камера, round/square, косое перо (`chisel`), спрей (`spray`), цвет/толщина/opacity, палитра, рука, wheel, Space/средняя кнопка, отмена жеста, локальные ластик и undo. Favicon — пользовательская монолинейная иконка в `public/favicon.png` (64×64); исходник сохранён в `docs/design/favicon-source.png`, логотип поверх холста не добавляется.
+
+Косое перо — плоский наконечник под -45°, спрей — воспроизводимые частицы от UUID и траектории. Настройки сохраняются, opacity применяется ко всему штриху. Для backend нужны новые enum-значения и bounds: [docs/brushes.md](docs/brushes.md); сервер в этой задаче не меняется.
 
 ## Запуск
 
@@ -30,6 +32,12 @@ npm run test:e2e:all   # Chromium + Firefox + WebKit
 ```
 
 Vite зарезервирован proxy `/ws`, `/healthz`, `/readyz` → `http://127.0.0.1:3000`. Для другого backend: `BACKEND_DEV_URL=http://127.0.0.1:8080 npm run dev`. Пока приложение не открывает WS и не обращается к этим маршрутам. Порт сервера и production-раздача `dist/` ещё требуют согласования.
+
+## Администратор и модерация
+
+Предусмотрен отдельный служебный вход `/admin/`, без кнопок и ссылок на публичном холсте: логин + сложный пароль + обязательный WebAuthn passkey с user verification, включая Touch ID. Platform/synced passkeys разрешены; требуются основной и отдельный резервный credential, а не один синхронизированный ключ на двух устройствах. Нужны серверная сессия, CSRF-защита, выбор/подтверждение скрытия чужих штрихов с причиной, live-уведомление всех посетителей и закрытый аудит.
+
+**Во фронтенде пока не реализовано:** текущий прототип не предоставляет входа и не выдаёт административные права. Backend передал контракт реализации в работе: `../endless-drawing-backend/docs/admin-api.md` — единственный источник wire-форм; статус/fixtures смотреть в его разделе «Готовность». Скрытый URL/Storage-флаг не заменяют серверную авторизацию. Продуктовые требования: [docs/moderation.md](docs/moderation.md). Это обязательный этап до публичного запуска.
 
 ## Управление
 
@@ -59,14 +67,17 @@ Vite зарезервирован proxy `/ws`, `/healthz`, `/readyz` → `http:/
 - Геометрия: память страницы, не более 500 локальных штрихов по 2000 точек; не хранится в браузерном Storage. Undo — удаление из этого локального списка, не постоянный стек. На пределе points путь прореживается, не обрезается.
 - Повреждённые/недоступные Storage не ломают приложение.
 - Зум фиксирован: 1 world unit = 1 CSS px. DPR меняет только backing canvas.
-- Единый Canvas renderer: round/round и square/bevel, одиночные circle/square, opacity за один draw call на штрих. Перерисовка только dirty RAF.
+- Единый Canvas renderer: round/round, square/bevel, swept chisel nib и детерминированный spray; opacity за один draw call на штрих. Effect Path2D кешируются, спрей ограничен 2048 stamps × 48 частиц. Перерисовка только dirty RAF.
 - Viewport-кеш, transport mock и серверное состояние ещё **не реализованы**.
 
-Целевая совместимость: актуальные desktop Chrome/Edge, Firefox, Safari (ориентир Chrome/Edge 120+, Firefox 121+, Safari 17+). Проверено: TypeScript и production build, 41 unit-тест, 57 E2E-проверок (19 сценариев × Chromium/Firefox/WebKit на macOS). Матрица задаётся в `playwright.config.ts`. Это не заменяет ручную визуальную приёмку Safari/Edge и проверку нижних поддерживаемых версий; backend-интеграция ещё не проверялась. Mobile UX вне MVP.
+Целевая совместимость: актуальные desktop Chrome/Edge, Firefox, Safari (ориентир Chrome/Edge 120+, Firefox 121+, Safari 17+). Проверено: TypeScript и production build, 63 unit-теста, 75 E2E-проверок (25 сценариев × Chromium/Firefox/WebKit на macOS). Матрица задаётся в `playwright.config.ts`. Это не заменяет ручную визуальную приёмку Safari/Edge и проверку нижних поддерживаемых версий; backend-интеграция ещё не проверялась. Планшеты с пером/touch записаны отдельным этапом после модерации: [бэклог](docs/tablet-input-backlog.md). Пока без реализации, зума и чувствительности к нажатию; полный mobile UX/телефоны не включены.
 
 ## Документы
 
 - [Продукт и референсы](docs/product.md)
 - [План, решения и открытые вопросы](docs/implementation-plan.md)
+- [Закрытая модерация и вход администратора](docs/moderation.md)
+- [Косое перо, спрей и передача backend](docs/brushes.md)
+- [Бэклог: планшеты с пером/touch после модерации](docs/tablet-input-backlog.md)
 - [Инструкции для coding agents](AGENTS.md)
 - API/ТЗ: `../endless-drawing-backend/docs/{frontend,protocol,backend}.md` (соседний репозиторий).

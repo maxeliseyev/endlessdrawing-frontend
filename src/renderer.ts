@@ -1,7 +1,46 @@
 import { backingSize, worldToScreen, type Camera, type Viewport } from './camera';
+import { chiselPolygons, sprayParticles } from './brush-geometry';
 import { ERASER_TOLERANCE, type Point, type Stroke, type StrokeDraft } from './model';
 
-type Drawable = Pick<StrokeDraft, 'points' | 'brush' | 'width' | 'color' | 'opacity'>;
+type Drawable = Pick<StrokeDraft, 'id' | 'points' | 'brush' | 'width' | 'color' | 'opacity'>;
+
+interface CachedEffect {
+  points: Point[];
+  count: number;
+  last: Point | undefined;
+  width: number;
+  brush: Drawable['brush'];
+  id: string;
+  path: Path2D;
+}
+const effects = new WeakMap<Drawable, CachedEffect>();
+
+function effectPath(stroke: Drawable): Path2D {
+  const cached = effects.get(stroke);
+  const last = stroke.points.at(-1);
+  // Preview only appends/decimates points. Completed geometry is immutable.
+  if (cached && cached.points === stroke.points && cached.count === stroke.points.length &&
+      cached.last === last && cached.width === stroke.width && cached.brush === stroke.brush && cached.id === stroke.id) return cached.path;
+  const path = new Path2D();
+  if (stroke.brush === 'chisel') {
+    for (const polygon of chiselPolygons(stroke.points, stroke.width)) {
+      const first = polygon[0];
+      if (!first) continue;
+      path.moveTo(first[0], first[1]);
+      for (const [x, y] of polygon.slice(1)) path.lineTo(x, y);
+      path.closePath();
+    }
+  } else {
+    for (const { x, y, radius } of sprayParticles(stroke)) {
+      path.moveTo(x + radius, y);
+      path.arc(x, y, radius, 0, Math.PI * 2);
+      path.closePath();
+    }
+  }
+  effects.set(stroke, { points: stroke.points, count: stroke.points.length, last,
+    width: stroke.width, brush: stroke.brush, id: stroke.id, path });
+  return path;
+}
 
 function pathFor(stroke: Drawable, camera: Camera, viewport: Viewport): Path2D {
   const path = new Path2D();
@@ -32,7 +71,12 @@ export function drawStroke(
   context.globalAlpha = stroke.opacity;
   context.fillStyle = context.strokeStyle = stroke.color;
   setLineStyle(context, stroke);
-  if (stroke.points.length === 1) {
+  if (stroke.brush === 'chisel' || stroke.brush === 'spray') {
+    const [x, y] = worldToScreen(first, camera, viewport);
+    context.translate(x, y);
+    // One union fill: overlap inside the nib/spray never reapplies opacity.
+    context.fill(effectPath(stroke));
+  } else if (stroke.points.length === 1) {
     const [x, y] = worldToScreen(first, camera, viewport);
     const path = new Path2D();
     if (stroke.brush === 'round') path.arc(x, y, stroke.width / 2, 0, Math.PI * 2);
@@ -52,6 +96,30 @@ export function hitTest(
   const first = stroke.points[0];
   if (!first) return false;
   const [x, y] = worldToScreen(point, camera, viewport);
+  if (stroke.brush === 'spray') {
+    const px = point[0] - first[0];
+    const py = point[1] - first[1];
+    // Analytic circle distances avoid engine-specific stroke-to-path behavior
+    // when a tolerance stroke is wider than a tiny particle's diameter.
+    for (const particle of sprayParticles(stroke)) {
+      if (Math.hypot(px - particle.x, py - particle.y) <= particle.radius + tolerance) return true;
+    }
+    return false;
+  }
+  if (stroke.brush === 'chisel') {
+    context.save();
+    context.resetTransform();
+    context.lineWidth = tolerance * 2;
+    context.lineJoin = 'round';
+    const path = effectPath(stroke);
+    const px = point[0] - first[0];
+    const py = point[1] - first[1];
+    // Match the swept nib rather than a round approximation of its centerline.
+    const hit = context.isPointInPath(path, px, py) ||
+      (tolerance > 0 && context.isPointInStroke(path, px, py));
+    context.restore();
+    return hit;
+  }
   if (stroke.points.length === 1) {
     const dx = Math.abs(point[0] - first[0]);
     const dy = Math.abs(point[1] - first[1]);

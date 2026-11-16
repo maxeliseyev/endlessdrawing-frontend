@@ -1,4 +1,4 @@
-import { isTool, type Preferences, type Tool } from './model';
+import { isBrushShape, isTool, type Preferences, type Tool } from './model';
 import type { Locale, Messages } from './i18n';
 
 const COLORS = ['#202020', '#E46C60', '#E9AF59', '#69A27F', '#7195D0', '#AD8ACB'];
@@ -33,8 +33,10 @@ export class Palette {
       </div>
       <fieldset class="shapes">
         <legend>${messages.brushShape}</legend>
-        <button type="button" data-brush="round" aria-label="${messages.roundBrush}"><span class="shape round" aria-hidden="true"></span></button>
-        <button type="button" data-brush="square" aria-label="${messages.squareBrush}"><span class="shape square" aria-hidden="true"></span></button>
+        <button type="button" data-brush="round" aria-label="${messages.roundBrush}" title="${messages.roundBrush}"><span class="shape round" aria-hidden="true"></span></button>
+        <button type="button" data-brush="square" aria-label="${messages.squareBrush}" title="${messages.squareBrush}"><span class="shape square" aria-hidden="true"></span></button>
+        <button type="button" data-brush="chisel" aria-label="${messages.chiselBrush}" title="${messages.chiselBrush}"><span class="shape chisel" aria-hidden="true"></span></button>
+        <button type="button" data-brush="spray" aria-label="${messages.sprayBrush}" title="${messages.sprayBrush}"><span class="shape spray" aria-hidden="true"></span></button>
       </fieldset>
       <label class="control-label" for="brush-width">${messages.width} <output for="brush-width" id="width-output"></output></label>
       <input id="brush-width" type="range" min="1" max="64" step="1" />
@@ -67,7 +69,7 @@ export class Palette {
       if (isTool(button.dataset.tool)) {
         this.update({ tool: button.dataset.tool });
         this.close();
-      } else if (button.dataset.brush === 'round' || button.dataset.brush === 'square') {
+      } else if (isBrushShape(button.dataset.brush)) {
         this.update({ brush: button.dataset.brush });
       } else if (button.dataset.color) {
         this.update({ color: button.dataset.color });

@@ -45,6 +45,14 @@ test('opens directly on a white canvas: brand metadata, no welcome/banner/panel'
   await expect(page).toHaveTitle('Endless Drawing');
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'One drawing. Everyone. Forever.');
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://endlessdrawing.com/');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.png');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('type', 'image/png');
+  const icon = await page.request.get('/favicon.png');
+  expect(icon.ok()).toBe(true);
+  expect(icon.headers()['content-type']).toContain('image/png');
+  const png = await icon.body();
+  expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([64, 64]);
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('status')).toBeHidden();
   expect(await page.locator('body').innerText()).toBe('');
@@ -156,6 +164,11 @@ test('local eraser removes the top intersecting draft as a whole, undo then find
 });
 
 test('pointercancel, lost capture and blur discard unfinished drawings', async ({ page }) => {
+  await page.locator('canvas').evaluate((canvas) => {
+    canvas.addEventListener('pointerdown', (event) => {
+      canvas.setAttribute('data-test-pointer-id', String((event as PointerEvent).pointerId));
+    });
+  });
   for (const reason of ['pointercancel', 'lostpointercapture', 'blur']) {
     await page.mouse.move(250, 250);
     await page.mouse.down();
@@ -164,9 +177,10 @@ test('pointercancel, lost capture and blur discard unfinished drawings', async (
     await page.locator('canvas').evaluate((canvas, reason) => {
       if (reason === 'blur') window.dispatchEvent(new Event('blur'));
       else {
-        const ids: number[] = [];
-        for (let id = 0; id < 10; id++) if (canvas.hasPointerCapture(id)) ids.push(id);
-        canvas.dispatchEvent(new PointerEvent(reason, { pointerId: ids[0] ?? 1 }));
+        // Firefox can allocate pointer IDs beyond 9 across browser contexts.
+        // Use the real event ID rather than guessing a small numeric range.
+        const pointerId = Number(canvas.getAttribute('data-test-pointer-id'));
+        canvas.dispatchEvent(new PointerEvent(reason, { pointerId }));
       }
     }, reason);
     await page.mouse.up();

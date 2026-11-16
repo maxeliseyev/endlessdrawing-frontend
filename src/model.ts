@@ -5,7 +5,7 @@ export const ERASER_TOLERANCE = 4; // CSS pixels; zoom is fixed at 1.
 
 export type Point = readonly [x: number, y: number];
 export type Tool = 'brush' | 'hand' | 'eraser';
-export type BrushShape = 'round' | 'square';
+export type BrushShape = 'round' | 'square' | 'chisel' | 'spray';
 
 export interface Brush {
   brush: BrushShape;
@@ -14,7 +14,9 @@ export interface Brush {
   opacity: number;
 }
 
-// Exactly the proposed stroke.create payload. Never add ownership or server seq here.
+// stroke.create payload; chisel/spray extend the original round/square contract.
+// Backend support for these enum values must be added before WS integration.
+// Never add ownership or server seq here.
 export interface StrokeDraft extends Brush {
   id: string;
   points: Point[];
@@ -41,11 +43,15 @@ export function isTool(value: unknown): value is Tool {
   return value === 'brush' || value === 'hand' || value === 'eraser';
 }
 
+export function isBrushShape(value: unknown): value is BrushShape {
+  return value === 'round' || value === 'square' || value === 'chisel' || value === 'spray';
+}
+
 export function isBrush(value: unknown): value is Brush {
   if (!value || typeof value !== 'object') return false;
   const b = value as Record<string, unknown>;
   return (
-    (b.brush === 'round' || b.brush === 'square') &&
+    isBrushShape(b.brush) &&
     typeof b.width === 'number' && Number.isFinite(b.width) && b.width >= 1 && b.width <= 64 &&
     typeof b.color === 'string' && /^#[\da-f]{6}$/i.test(b.color) &&
     typeof b.opacity === 'number' && Number.isFinite(b.opacity) && b.opacity > 0 && b.opacity <= 1
