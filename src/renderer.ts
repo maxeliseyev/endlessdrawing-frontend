@@ -148,6 +148,7 @@ export class Renderer {
   readonly context: CanvasRenderingContext2D;
   private frame: number | undefined;
   private dpr = 1;
+  private disposed = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderScene: () => void) {
     const context = canvas.getContext('2d');
@@ -163,8 +164,14 @@ export class Renderer {
     this.invalidate();
   }
 
+  dispose(): void {
+    this.disposed = true;
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frame = undefined;
+  }
+
   invalidate(): void {
-    if (this.frame !== undefined) return;
+    if (this.disposed || this.frame !== undefined) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = undefined;
       const context = this.context;

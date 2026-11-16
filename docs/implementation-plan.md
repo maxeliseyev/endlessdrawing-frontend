@@ -16,14 +16,14 @@
 
 ## 2. Открыто перед интеграцией
 
-Это вопросы из backend docs, а не блокеры для локальной геометрии. Ответы команды ещё не получены.
+Ниже — вопросы интеграции. Часть уже конкретизирована в backend docs: реализованный профиль WS v1 и admin-api.md. Read-only admin-клиент использует эти формы; совместная приёмка с настоящим backend/HTTPS и публичное серверное рисование остаются отдельными gates.
 
 1. **Принять точный JSON v1:** hello.ack, поля ack/error, повтор delete, resync_required, нормализацию цвета, safe integer seq и chunking. В `../endless-drawing-backend/docs/protocol.md` эти детали всё ещё предложения. Следующий шаг — типы + общие fixtures для mock/сервера, не два расходящихся контракта.
 2. **Геометрия:** подтвердить Canvas square/bevel и bounds square `width / sqrt(2) + 1`, round `width / 2 + epsilon`. Проверить толстые наклонные концы на границе подписки.
 3. **Dev/prod:** выбрать backend-порт, Origin allowlist для http://127.0.0.1:5173 / localhost, путь к frontend `dist/`, способ доставки артефакта между репозиториями. Временный proxy target — http://127.0.0.1:3000, override `BACKEND_DEV_URL`. Production — https://endlessdrawing.com, WSS `/ws`; конфигурация backend/TLS ещё не сделана.
 4. **Лимиты, влияющие на UX:** максимальные размеры подписки (prefetch = 3× viewport), длина/протяжённость штриха, частота delete/subscribe, rate-limit burst, heartbeat/таймауты, очереди и chunk bytes. 2000 points / 128KiB / 5 create/sec взяты из ТЗ; окончательный сервер может быть конфигурируемым.
 5. **Публичный запуск:** политика модерации/хранения/backup — решение владельца и backend/DevOps. Фраза проекта сама по себе не определяет SLA хранения.
-6. **Вход администратора:** backend передал `../endless-drawing-backend/docs/admin-api.md` — единственный источник wire-форм и статуса готовности. Пароль + WebAuthn passkey с UV required (policy `passkey_uv`), pre-auth/full cookies, CSRF в памяти, атомарный batch до 100 UUID и проверка operation при потере ответа уже описаны там. По решению владельца Touch ID/platform/synced passkeys разрешены, аттестация/CA trust store не требуются. Реальный backend/fixtures, Touch ID, резервный credential и cross-browser enrollment/login пока требуют совместной проверки. UI ещё не реализован, enrollment нельзя молча пропустить: без него production provisioning заблокирован. Продуктовые требования: [moderation.md](moderation.md).
+6. **Вход администратора:** backend передал `../endless-drawing-backend/docs/admin-api.md` — единственный источник wire-форм и статуса готовности. Пароль + WebAuthn passkey с UV required (policy `passkey_uv`), pre-auth/full cookies, CSRF в памяти, атомарный batch до 100 UUID и проверка operation при потере ответа уже описаны там. По решению владельца Touch ID/platform/synced passkeys разрешены, аттестация/CA trust store не требуются. Реальный backend/fixtures, Touch ID, резервный credential и cross-browser enrollment/login пока требуют совместной проверки. UI, enrollment двух credentials и HTTP/WS-клиенты реализованы, проверены mock E2E; есть native Chromium WebAuthn тест с виртуальными UV authenticators. Настоящий HTTPS provisioning/Touch ID ещё не выполнен: наличие UI не включает admin на VPS. Инструкция — [admin-frontend.md](admin-frontend.md). Продуктовые требования: [moderation.md](moderation.md).
 7. **Новые кисти:** принять `chisel`/`spray` в enum, DB CHECK, snapshot/create и bounds на backend; общие fixtures и геометрический контракт — [brushes.md](brushes.md). Backend в этой итерации не менять параллельно административной работе владельца.
 
 ## 3. Этапы
@@ -41,7 +41,9 @@
 - [x] TypeScript + production build, 63 unit-теста, 75 E2E (25 сценариев × Chromium/Firefox/WebKit на macOS). Проверены чистый старт без overlays, metadata, preview/отмена, палитра/Tab/focus, настройки/reload, панорамирование, локальные ластик/undo, opacity/self-intersection, hit-test, resize, DPR=2, заблокированный Storage и локализация EN/RU/unsupported locales, favicon, новые формы/детерминизм/opacity/hit-test.
 - [ ] Финальная ручная визуальная приёмка длинных детальных жестов и реальных desktop-браузеров, включая нижние поддерживаемые версии.
 
-### B. Транспорт и состояние — следующая итерация
+### B. Публичный транспорт и состояние — следующая итерация
+
+Read-only snapshot/live, runtime validation и reconnect уже реализованы отдельно для admin (этап D), но это не завершает публичные create/pending/undo ниже.
 
 - [ ] Типизированные сообщения и runtime-валидация входящего JSON.
 - [ ] Transport interface + детерминированный mock WS: hello, chunks, ack/error, create/delete, сбои и повторы.
@@ -62,11 +64,14 @@
 ### D. Закрытая модерация — обязательно до публичного запуска
 
 - [x] Зафиксированы требование входа, отсутствие публичных элементов администратора, логин/сложный пароль + FIDO2, отдельная серверная авторизация/аудит: [moderation.md](moderation.md).
-- [ ] Подключить отдельный typed client и WebAuthn/base64url adapters строго по backend `docs/admin-api.md`, с mock/fixtures. Реальную готовность backend проверять в его разделе «Готовность».
+- [x] Отдельный typed client/runtime guards и WebAuthn/base64url adapters по backend `docs/admin-api.md`, cookie same-origin/no-store, CSRF только RAM, UV required, безопасные ошибки и Retry-After.
 - [ ] Проверить backend auth: Argon2id, WebAuthn challenge/verify, closed enrollment двух ключей/recovery, rate limits, cookie/CSRF, logout/expiry/revocation. Учесть policy `passkey_uv`: UV обязателен, platform/synced passkeys разрешены, password-only fallback запрещён; один iCloud credential на нескольких устройствах не считать двумя независимыми регистрациями.
-- [ ] Подключить атомарный hide API по контракту: причина, прежний operation_id/payload при повторе, проверка operation после неопределённой сети, аудит и `stroke.deleted` после commit.
-- [ ] Отдельный admin entry с EN/RU входом и просмотром общего мира, одиночным/множественным выделением штрихов, подтверждением и причиной. Не имитировать вход локальным флагом до готовности backend.
-- [ ] Серверная раздача служебного entry, no-store/noindex и защита от framing; публичная сборка не загружает admin UI и не проверяет admin-session.
+- [x] Frontend hide по атомарному API: immutable operation_id/payload, UUID/причина/подтверждение, валидация полного результата, check operation/явный идентичный retry, никакого успеха по одному WS-событию или автоповтора после re-login. Серверный аудит/commit/broadcast проверяются совместно.
+- [x] Отдельный `/admin/` entry EN/RU: пароль → passkey → verify, closed enrollment двух credentials → новый login, real read-only WS-клиент, выделение нескольких штрихов кликами, подтверждение/причина, 401/expiry/logout. Никакого локального admin-флага или mock-кода в production.
+- [x] Ограниченная authoritative scene, multi-chunk snapshot, старые subscription_id, tombstones после hide, resync/reconnect/backoff/deadlines, общий renderer/DPR; public entry не импортирует admin.
+- [x] 97 unit-тестов; 127 E2E passed, 2 CDP-only skips в Firefox/WebKit. Admin HTTP/WS E2E — mocks; отдельный Chromium native WebAuthn с двумя virtual UV authenticators, не настоящий Touch ID.
+- [x] Multi-entry build `dist/admin/index.html`, favicon/assets, noindex metadata и dev/preview privacy headers. Публичный import graph и отсутствие API/session checks проверяются тестами.
+- [ ] Совместная production-раздача целого dist через backend, no-store/noindex/CSP/anti-framing на HTTPS; реальный Touch ID, резервный провайдер и cookies/Origin/CSRF.
 - [ ] Интеграционные проверки обоих факторов/запретов/CSRF/отзыва/аудита и два публичных контекста: скрытое исчезает у всех, не возвращается после snapshot/reload/повтора create.
 - [ ] Согласовать правила модерации и хранения с владельцем, подготовить закрытую инструкцию администратора и восстановления доступа.
 
@@ -79,4 +84,4 @@
 - [ ] Undo внутри открытой палитры, крупные touch targets, EN/RU; без постоянных панелей. Нативное long-press меню подавлять только на холсте, не в полях.
 - [ ] Проверить palm rejection и переходы pen/touch на реальных планшетах. Сначала планшеты с пером, без зума и чувствительности к нажатию; телефоны/полный mobile UX не включать неявно.
 
-Локальный прототип **не является** завершённым MVP, общим миром или системой постоянного хранения. В `sessionStorage` сейчас только камера, в `localStorage` — инструмент/кисть; геометрия и локальный undo исчезают при reload. Секрет и постоянный undo будут добавлены вместе с транспортом, не заранее без работающего backend-пути.
+Локальный прототип **не является** завершённым MVP, общим миром или системой постоянного хранения. В `sessionStorage` сейчас только камера, в `localStorage` — инструмент/кисть; геометрия и локальный undo исчезают при reload. Секрет и постоянный undo публичного рисования будут добавлены вместе с его транспортом. Admin отдельно имеет read-only WS-сцену и случайный anonymous secret в RAM; это не публичное серверное рисование и не авторизация удаления.

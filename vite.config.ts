@@ -1,14 +1,41 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+function privateHeaders(request: IncomingMessage, response: ServerResponse, next: () => void): void {
+  const path = request.url?.split('?')[0] ?? '';
+  if (path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/') || path.startsWith('/src/admin/')) {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.setHeader('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
+  }
+  next();
+}
 
 // The backend address is a local development default, not an agreed API port.
 const backend = process.env.BACKEND_DEV_URL ?? 'http://127.0.0.1:3000';
 
 export default defineConfig({
+  plugins: [{ name: 'private-admin-headers',
+    configureServer(server) { server.middlewares.use(privateHeaders); },
+    configurePreviewServer(server) { server.middlewares.use(privateHeaders); },
+  }],
+  build: { rollupOptions: { input: {
+    canvas: fileURLToPath(new URL('./index.html', import.meta.url)),
+    admin: fileURLToPath(new URL('./admin/index.html', import.meta.url)),
+  } } },
+  // Vite's HTML/asset middleware otherwise overwrites earlier Cache-Control.
+  // Development/preview responses are intentionally uncached; production uses backend headers.
+  preview: { headers: { 'Cache-Control': 'no-store' } },
   server: {
+    headers: { 'Cache-Control': 'no-store' },
     port: 5173,
     strictPort: true,
     proxy: {
       '/ws': { target: backend, ws: true },
+      '/api/admin': { target: backend },
       '/healthz': { target: backend },
       '/readyz': { target: backend },
     },
