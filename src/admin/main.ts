@@ -238,9 +238,10 @@ async function totpSettings(current: number, value: AdminSession): Promise<void>
     body.append(button(t.totpEnable, () => { void (async () => {
       body.querySelectorAll('button').forEach((control) => { control.disabled = true; });
       try {
-        const setup = await api.totpStart(value.csrf_token, lifetime.signal); if (!active()) return;
+        const setup = await api.totpStart(value.csrf_token, lifetime.signal);
+        if (!active()) { setup.secret = ''; setup.otpauth_uri = ''; return; }
         const remaining = Date.parse(setup.expires_at) - Date.now();
-        if (remaining <= 0) { info.textContent = t.totpExpired; body.replaceChildren(); return; }
+        if (remaining <= 0) { setup.secret = ''; setup.otpauth_uri = ''; info.textContent = t.totpExpired; body.replaceChildren(); return; }
         body.replaceChildren(); info.textContent = t.totpScan;
         const canvas = document.createElement('canvas'); canvas.className = 'totp-qr'; canvas.setAttribute('aria-label', t.totpSettings);
         const manual = document.createElement('label'); manual.textContent = t.totpManual;
@@ -251,7 +252,8 @@ async function totpSettings(current: number, value: AdminSession): Promise<void>
         const submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = t.totpConfirm;
         form.append(label, submit); body.append(canvas, manual, button(t.revealSetup, () => { secret.type = secret.type === 'password' ? 'text' : 'password'; }), form);
         expiry = setTimeout(() => { if (active()) { body.querySelectorAll('input').forEach((field) => { field.value = ''; }); canvas.width = 0; canvas.height = 0; body.replaceChildren(); info.textContent = t.totpExpired; } }, remaining);
-        await QRCode.toCanvas(canvas, setup.otpauth_uri, { width: 240, margin: 2 });
+        try { await QRCode.toCanvas(canvas, setup.otpauth_uri, { width: 240, margin: 2 }); }
+        finally { setup.secret = ''; setup.otpauth_uri = ''; }
         if (!active()) { canvas.width = 0; canvas.height = 0; return; }
         let busy = false;
         form.addEventListener('submit', (event) => { event.preventDefault(); if (busy) return;
