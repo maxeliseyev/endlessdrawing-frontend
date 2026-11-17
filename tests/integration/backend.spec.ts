@@ -23,6 +23,9 @@ async function open(browser: Browser, camera: { x: number; y: number }): Promise
   frames.set(page, received);
   page.on('websocket', (socket) => socket.on('framereceived', (frame) => received.push(String(frame.payload))));
   await page.goto('/');
+  // HTML load is not WebSocket/snapshot readiness, especially over staging WAN TLS.
+  await expect.poll(() => received.some((frame) => frame.includes('"type":"viewport.snapshot.end"')),
+    { timeout: 30_000 }).toBe(true);
   return page;
 }
 
@@ -33,6 +36,7 @@ async function choose(page: Page, label: string): Promise<void> {
 }
 
 test('shared world through the real backend: sync, ownership, undo, reload, new brushes', async ({ browser }) => {
+  test.setTimeout(120_000); // Several real WAN navigations/WS handshakes, not a single local interaction.
   const camera = { x: Math.round(Math.random() * 1e8), y: Math.round(Math.random() * 1e8) };
   const author = await open(browser, camera);
   const visitor = await open(browser, camera);
@@ -63,7 +67,10 @@ test('shared world through the real backend: sync, ownership, undo, reload, new 
   await expect.poll(() => pixel(visitor, 350, 250)).toEqual([32, 32, 32, 255]);
 
   // After reload the author still owns the strokes (same tab session) and undo removes them for everyone.
+  ws.length = 0;
   await author.reload();
+  await expect.poll(() => ws.some((frame) => frame.includes('"type":"viewport.snapshot.end"')),
+    { timeout: 30_000 }).toBe(true);
   await expect.poll(() => pixel(author, 350, 250), { timeout: 10_000 }).toEqual([32, 32, 32, 255]);
   await author.locator('canvas').focus();
   for (let i = 0; i < 3; i++) await author.keyboard.press('ControlOrMeta+z');
