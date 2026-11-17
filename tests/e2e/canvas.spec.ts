@@ -130,8 +130,8 @@ test('brush controls survive tool changes/reload and text fields do not trigger 
 
 test('Space drag, middle drag and wheel move camera, not stored world geometry; camera restores', async ({ page }) => {
   await draw(page);
-  await page.keyboard.down('Space');
   await page.mouse.move(500, 400);
+  await page.keyboard.down('Space');
   await page.mouse.down();
   await page.mouse.move(550, 420);
   await page.mouse.up();
@@ -153,6 +153,30 @@ test('Space drag, middle drag and wheel move camera, not stored world geometry; 
   // The stroke comes back from the server snapshot at its world position.
   await expect.poll(() => pixel(page, 350, 330)).toEqual([32, 32, 32, 255]);
   await expect.poll(() => pixel(page, 350, 250)).toEqual([255, 255, 255, 255]);
+});
+
+test('holding Space pans with plain mouse movement and releasing it restores the tool', async ({ page }) => {
+  await draw(page);
+  const canvas = page.locator('canvas');
+  await page.mouse.move(300, 300);
+  await page.keyboard.down('Space');
+  await expect(canvas).toHaveCSS('cursor', 'grab');
+  await page.mouse.move(360, 330, { steps: 5 }); // no button pressed
+  await expect.poll(() => camera(page)).toEqual({ x: -60, y: -30, zoom: 1 });
+  await expect.poll(() => pixel(page, 400, 280)).toEqual([32, 32, 32, 255]); // the stroke moved with the cursor
+  await expect.poll(() => pixel(page, 350, 250)).toEqual([255, 255, 255, 255]);
+  // Space + drag still works and hover-pan resumes afterwards without a jump.
+  await page.mouse.down();
+  await page.mouse.move(380, 340);
+  await page.mouse.up();
+  await page.mouse.move(390, 340);
+  await expect.poll(() => camera(page)).toEqual({ x: -90, y: -40, zoom: 1 });
+  await page.keyboard.up('Space');
+  await expect(canvas).toHaveCSS('cursor', 'crosshair');
+  await page.mouse.move(500, 500, { steps: 5 });
+  await expect.poll(() => camera(page)).toEqual({ x: -90, y: -40, zoom: 1 });
+  // Nothing was drawn by any of these movements.
+  await expect.poll(() => pixel(page, 600, 500)).toEqual([255, 255, 255, 255]);
 });
 
 test('local eraser removes the top intersecting draft as a whole, undo then finds the remaining stroke', async ({ page }) => {

@@ -45,6 +45,9 @@ let camera = loadCamera(session);
 let viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
 let gesture: Gesture | undefined;
 let space = false;
+// Last mouse/pen position over the canvas: while Space is held, plain cursor
+// movement (no button) drags the canvas along with it.
+let hover: Point | undefined;
 let cameraDirty = false;
 // Once a pen is used, fingers only navigate (palm/hand on the screen).
 let penSeen = false;
@@ -272,6 +275,11 @@ canvas.addEventListener('pointerdown', (event) => {
 
 canvas.addEventListener('pointermove', (event) => {
   const id = event.pointerId;
+  if (event.pointerType !== 'touch') {
+    const point = localPoint(event);
+    if (space && !gesture && hover && !palette.isOpen) setCamera(panScreen(camera, hover[0] - point[0], hover[1] - point[1]));
+    hover = point;
+  }
   if (event.pointerType === 'touch' && touches.has(id)) touches.set(id, localPoint(event));
   if (longPress?.pointerId === id) {
     const [x, y] = localPoint(event);
@@ -334,6 +342,8 @@ function cancelPointer(event: PointerEvent): void {
   if (gesturePointer(gesture) === event.pointerId) releaseGesture(true);
 }
 canvas.addEventListener('pointercancel', cancelPointer);
+// Re-entering the canvas must not jump by the distance travelled outside it.
+canvas.addEventListener('pointerleave', (event) => { if (event.pointerType !== 'touch') hover = undefined; });
 canvas.addEventListener('lostpointercapture', (event) => {
   // Touch ends release capture implicitly; pointerup has already run then.
   if (gesturePointer(gesture) === event.pointerId) releaseGesture(true);

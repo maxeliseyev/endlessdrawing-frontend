@@ -9,14 +9,14 @@ const labels = {
     dialog: 'Drawing tools', brush: 'Brush', hand: 'Hand', eraser: 'Eraser',
     round: 'Round brush', square: 'Square brush', width: 'Width', opacity: 'Opacity',
     color: 'Choose color', hex: 'HEX color', swatch: 'Color #E46C60',
-    undoButton: 'Undo', zoomIn: 'Zoom in', pan: 'Space + drag — pan',
+    undoButton: 'Undo', zoomIn: 'Zoom in', pan: 'Hold Space and move — pan',
     undo: 'Ctrl / ⌘ Z — undo', canvas: /canvas\. Right-click, long-press/,
   },
   ru: {
     dialog: 'Инструменты рисования', brush: 'Кисть', hand: 'Рука', eraser: 'Ластик',
     round: 'Круглая кисть', square: 'Квадратная кисть', width: 'Толщина', opacity: 'Непрозрачность',
     color: 'Выбрать цвет', hex: 'Цвет HEX', swatch: 'Цвет #E46C60',
-    undoButton: 'Отменить', zoomIn: 'Увеличить', pan: 'Space + drag — перемещение',
+    undoButton: 'Отменить', zoomIn: 'Увеличить', pan: 'Удерживайте Space и ведите мышью — перемещение',
     undo: 'Ctrl / ⌘ Z — отмена', canvas: /холст\. Правый клик, долгое нажатие/,
   },
 };
