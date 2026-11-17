@@ -15,7 +15,7 @@ describe('same-origin admin API client', () => {
       .mockResolvedValueOnce(json({ operation_id: operation.operation_id, hidden: [id], already_hidden: [] }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const api = new AdminApi(fetcher);
-    expect(await api.session()).toEqual(session);
+    expect(await api.session()).toEqual({ ...session, auth_method: 'passkey_uv' });
     await api.hide(operation, 'full-csrf');
     await api.logout('full-csrf');
     expect(fetcher.mock.calls[0]?.[0]).toBe('/api/admin/session');

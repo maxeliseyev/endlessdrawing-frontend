@@ -80,6 +80,27 @@ export class AdminApi {
   async enrollmentFinish(credential: unknown, csrf: string, signal?: AbortSignal) {
     return parseEnrollment(await this.request('enrollment/finish', { credential }, csrf, signal));
   }
+  async loginTotp(login: string, password: string, code: string, csrf: string, signal?: AbortSignal) {
+    return parseSession(await this.request('login/totp', { login, password, code }, csrf, signal));
+  }
+  async totpStatus(signal?: AbortSignal) {
+    const v = object(await this.request('totp/status', undefined, undefined, signal));
+    if (typeof v.available !== 'boolean' || typeof v.enabled !== 'boolean' || typeof v.fresh_passkey !== 'boolean') throw new ProtocolError();
+    return { available: v.available, enabled: v.enabled, fresh_passkey: v.fresh_passkey };
+  }
+  async totpStart(csrf: string, signal?: AbortSignal) {
+    const v = object(await this.request('totp/setup/start', {}, csrf, signal));
+    if (typeof v.secret !== 'string' || !/^[A-Z2-7]{32}$/.test(v.secret) || typeof v.otpauth_uri !== 'string' || typeof v.expires_at !== 'string' || !Number.isFinite(Date.parse(v.expires_at))) throw new ProtocolError();
+    const uri = new URL(v.otpauth_uri);
+    if (uri.protocol !== 'otpauth:' || uri.hostname !== 'totp' || uri.searchParams.get('secret') !== v.secret) throw new ProtocolError();
+    return { secret: v.secret, otpauth_uri: v.otpauth_uri, expires_at: v.expires_at };
+  }
+  async totpConfirm(code: string, csrf: string, signal?: AbortSignal) {
+    if (await this.request('totp/setup/confirm', { code }, csrf, signal) !== undefined) throw new ProtocolError();
+  }
+  async totpDisable(csrf: string, signal?: AbortSignal) {
+    if (await this.request('totp/disable', {}, csrf, signal) !== undefined) throw new ProtocolError();
+  }
   async logout(csrf: string, signal?: AbortSignal) {
     if (await this.request('logout', {}, csrf, signal) !== undefined) throw new ProtocolError();
   }

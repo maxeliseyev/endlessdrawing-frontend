@@ -21,8 +21,12 @@
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "@types/node": "^22.19.1",
+    "@types/qrcode": "^1.5.6",
     "typescript": "~5.9.3",
     "vite": "^7.2.2",
     "vitest": "^4.0.9"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }
