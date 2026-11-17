@@ -11,6 +11,23 @@ async function pixel(page: Page, x: number, y: number): Promise<number[]> {
   }, { x, y });
 }
 
+// Sparse brushes (spray) do not guarantee a solid pixel at one coordinate,
+// so acceptance checks a small region instead of a single sample point.
+async function regionInk(page: Page, cx: number, cy: number, halfWidth: number, halfHeight: number): Promise<boolean> {
+  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, area) => {
+    const scale = canvas.width / canvas.clientWidth;
+    const x0 = Math.max(0, Math.round((area.cx - area.halfWidth) * scale));
+    const y0 = Math.max(0, Math.round((area.cy - area.halfHeight) * scale));
+    const x1 = Math.min(canvas.width, Math.round((area.cx + area.halfWidth) * scale));
+    const y1 = Math.min(canvas.height, Math.round((area.cy + area.halfHeight) * scale));
+    const data = canvas.getContext('2d')!.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255 || data[i + 3] !== 255) return true;
+    }
+    return false;
+  }, { cx, cy, halfWidth, halfHeight });
+}
+
 const frames = new WeakMap<Page, string[]>();
 
 async function open(browser: Browser, camera: { x: number; y: number }): Promise<Page> {
@@ -49,14 +66,16 @@ test('shared world through the real backend: sync, ownership, undo, reload, new 
   await expect.poll(() => ws.some((f) => f.includes('"operation":"stroke.create"'))).toBe(true);
 
   // chisel and spray are accepted end to end (backend migration 0003).
-  for (const [label, y] of [['Chisel pen', 350], ['Spray', 450]] as const) {
+  for (const [label, y, brush] of [['Chisel pen', 350, 'chisel'], ['Spray', 450, 'spray']] as const) {
     await author.mouse.click(900, 600, { button: 'right' });
     await author.getByRole('button', { name: label, exact: true }).click();
     await author.keyboard.press('Escape');
     await author.mouse.move(250, y); await author.mouse.down();
     await author.mouse.move(450, y, { steps: 10 }); await author.mouse.up();
-    await expect.poll(async () => (await pixel(visitor, 350, y)).join() !== WHITE.join() ||
-      (await pixel(visitor, 352, y + 1)).join() !== WHITE.join(), { timeout: 10_000 }).toBe(true);
+    // Deterministic: the server acknowledged this exact brush, then the visitor rendered ink in the area.
+    await expect.poll(() => ws.some((f) => f.includes('"operation":"stroke.create"') && f.includes(`"brush":"${brush}"`)),
+      { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => regionInk(visitor, 350, y, 40, 20), { timeout: 10_000 }).toBe(true);
   }
   expect(ws.filter((f) => f.includes('"type":"error"'))).toEqual([]);
 
