@@ -2,12 +2,12 @@ import './style.css';
 import { resolveLocale, translations } from './i18n';
 import {
   clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
-  visibleBounds, wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
+  wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
 } from './camera';
 import { appendPoint, fitsCreateMessage, newId, strokeExtent, type Point, type StrokeDraft } from './model';
 import { Palette, toolCursor } from './palette';
-import { drawStroke, hitTest, Renderer } from './renderer';
-import { TileCache } from './tiles';
+import { createHitContext, hitTest } from './renderer';
+import { createSceneRenderer, type SceneRenderer } from './scene-renderer';
 import {
   browserStorage, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS,
 } from './storage';
@@ -62,40 +62,27 @@ const world = new SharedWorld({
   notice: (notice) => notify(noticeText(notice), notice),
 });
 
-// Confirmed strokes live in a world-anchored tile cache fed by scene changes;
-// a frame copies tiles and draws only pending strokes and the preview on top.
-const tiles = new TileCache(world.scene);
-world.scene.listener = tiles;
-let settleTimer: ReturnType<typeof setTimeout> | undefined;
-
-const renderer = new Renderer(canvas, () => {
-  const context = renderer.context;
-  const dpr = renderer.pixelRatio;
-  const scene = world.scene;
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  const frame = tiles.draw(context, camera, viewport, dpr, performance.now());
-  context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // Overlays use the pixel-snapped camera so they line up with the tiles.
-  const view = frame.camera;
-  if (frame.direct) {
-    // No canvas memory for tiles: draw the visible scene directly.
-    const bounds = visibleBounds(view, viewport);
-    for (const stroke of scene.strokes()) {
-      if (scene.hidden.has(stroke.id) || !intersects(strokeExtent(stroke), bounds)) continue;
-      drawStroke(context, stroke, view, viewport);
-    }
-  }
-  // Unconfirmed own strokes: on top, in creation order, until their ack.
-  for (const draft of scene.visiblePending()) drawStroke(context, draft, view, viewport);
-  if (gesture?.kind === 'draw') drawStroke(context, gesture.stroke, view, viewport);
-  clearTimeout(settleTimer);
-  if (frame.busy) renderer.invalidate();
-  else if (frame.settleIn !== undefined) settleTimer = setTimeout(() => renderer.invalidate(), frame.settleIn + 1);
-  if (cameraDirty) {
+// Rendering backend (Canvas 2D with a tile cache today, WebGL later) behind
+// one interface: it receives drawn-set changes and pulls camera/overlays per frame.
+const renderer: SceneRenderer = createSceneRenderer(canvas, {
+  camera: () => camera,
+  viewport: () => viewport,
+  scene: world.scene,
+  // Unconfirmed own strokes on top in creation order until their ack, then the preview.
+  overlays: () => {
+    const drafts = world.scene.visiblePending();
+    if (gesture?.kind === 'draw') drafts.push(gesture.stroke);
+    return drafts;
+  },
+  painted: () => {
+    if (!cameraDirty) return;
     save(session, STORAGE_KEYS.camera, camera);
     cameraDirty = false;
-  }
+  },
 });
+world.scene.listener = renderer;
+// Eraser geometry tests run on their own 2D context, independent of the display.
+const hitContext = createHitContext();
 
 const palette = new Palette(preferences, {
   change: (next) => {
@@ -191,7 +178,7 @@ function releaseGesture(cancel: boolean): void {
 // the confirmed own stroke with the highest seq. The server checks ownership.
 function eraseAt(screen: Point): void {
   const point = toWorld(screen);
-  const context = renderer.context;
+  const context = hitContext;
   const pending = world.scene.visiblePending();
   for (let index = pending.length - 1; index >= 0; index--) {
     const draft = pending[index]!;

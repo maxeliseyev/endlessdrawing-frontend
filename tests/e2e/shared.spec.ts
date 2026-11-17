@@ -145,16 +145,17 @@ test('limited zoom: Ctrl+wheel around the cursor, keyboard and palette, scaled g
   await dialog.getByRole('button', { name: 'Zoom out', exact: true }).click();
   await expect(dialog.locator('#zoom-reset')).toHaveText('64%');
   for (let i = 0; i < 10; i++) await dialog.getByRole('button', { name: 'Zoom out', exact: true }).click();
-  await expect(dialog.locator('#zoom-reset')).toHaveText('25%');
+  await expect(dialog.locator('#zoom-reset')).toHaveText('16%');
   await dialog.getByRole('button', { name: /Reset to 100%/ }).click();
   await expect(dialog.locator('#zoom-reset')).toHaveText('100%');
-  // The eraser tolerance stays 4 screen px at 25%: just outside it nothing is removed.
-  await dialog.getByRole('button', { name: 'Zoom out', exact: true }).click();
-  for (let i = 0; i < 6; i++) await dialog.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  // The eraser tolerance stays 4 screen px at 16%: just outside it nothing is removed.
+  for (let i = 0; i < 9; i++) await dialog.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect(dialog.locator('#zoom-reset')).toHaveText('16%');
   await dialog.getByRole('button', { name: 'Eraser', exact: true }).click();
-  await page.mouse.click(500, 350 + 0.75 + 4 + 2);
+  // Width 6 at 16% is 0.96 CSS px: half of it is 0.48.
+  await page.mouse.click(500, 350 + 0.48 + 4 + 2);
   expect(world.messages.filter((m) => m.type === 'stroke.delete')).toHaveLength(0);
-  await page.mouse.click(500, 350 + 0.75 + 3);
+  await page.mouse.click(500, 350 + 0.48 + 3);
   await expect.poll(() => world.messages.filter((m) => m.type === 'stroke.delete').length).toBe(1);
   // Subscriptions follow the zoomed-out view and never exceed the server span.
   for (const m of world.messages.filter((m) => m.type === 'viewport.subscribe')) {

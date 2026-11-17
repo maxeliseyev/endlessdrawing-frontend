@@ -5,7 +5,9 @@ export interface Camera { x: number; y: number; zoom?: number }
 export interface Viewport { width: number; height: number }
 export interface Bounds { min_x: number; min_y: number; max_x: number; max_y: number }
 
-export const MIN_ZOOM = 0.25;
+// 16% = two ×1.25 steps below the original 25% floor (owner decision 17.11.2026).
+// Below ~0.16 a common wide screen would see more than MAX_SUBSCRIPTION_SPAN.
+export const MIN_ZOOM = 0.16;
 export const MAX_ZOOM = 4;
 // Backend VIEWPORT_MAX_SPAN default: a subscription may not exceed it on either axis.
 export const MAX_SUBSCRIPTION_SPAN = 30_000;
@@ -134,12 +136,17 @@ export function intersects(a: Bounds, b: Bounds): boolean {
 export function needsResubscribe(subscribed: Bounds | undefined, camera: Camera, viewport: Viewport): boolean {
   if (!subscribed) return true;
   const visible = visibleBounds(camera, viewport);
-  const mx = slack(visible.max_x - visible.min_x) * RESUBSCRIBE_AT;
-  const my = slack(visible.max_y - visible.min_y) * RESUBSCRIBE_AT;
-  const inside = subscribed.min_x <= Math.max(-WORLD_LIMIT, visible.min_x - mx) &&
-    subscribed.max_x >= Math.min(WORLD_LIMIT, visible.max_x + mx) &&
-    subscribed.min_y <= Math.max(-WORLD_LIMIT, visible.min_y - my) &&
-    subscribed.max_y >= Math.min(WORLD_LIMIT, visible.max_y + my);
+  const vw = visible.max_x - visible.min_x;
+  const vh = visible.max_y - visible.min_y;
+  // Never require more than one subscription can hold: a view wider than the
+  // server span (ultra-wide window at minimum zoom) would otherwise resubscribe
+  // on every frame. 0.5 world unit absorbs float noise at that exact limit.
+  const hx = Math.min(vw / 2 + slack(vw) * RESUBSCRIBE_AT, MAX_SUBSCRIPTION_SPAN / 2 - 0.5);
+  const hy = Math.min(vh / 2 + slack(vh) * RESUBSCRIBE_AT, MAX_SUBSCRIPTION_SPAN / 2 - 0.5);
+  const inside = subscribed.min_x <= Math.max(-WORLD_LIMIT, camera.x - hx) &&
+    subscribed.max_x >= Math.min(WORLD_LIMIT, camera.x + hx) &&
+    subscribed.min_y <= Math.max(-WORLD_LIMIT, camera.y - hy) &&
+    subscribed.max_y >= Math.min(WORLD_LIMIT, camera.y + hy);
   const wasteful = (subscribed.max_x - subscribed.min_x) > 6 * (visible.max_x - visible.min_x) &&
     (subscribed.max_y - subscribed.min_y) > 6 * (visible.max_y - visible.min_y);
   return !inside || wasteful;

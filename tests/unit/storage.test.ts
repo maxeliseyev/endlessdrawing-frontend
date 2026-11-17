@@ -67,7 +67,7 @@ describe('versioned browser storage', () => {
     save(storage, STORAGE_KEYS.camera, { x: 1, y: 2, zoom: 99 });
     expect(loadCamera(storage)).toEqual({ x: 1, y: 2, zoom: 4 });
     save(storage, STORAGE_KEYS.camera, { x: 1, y: 2, zoom: 0.001 });
-    expect(loadCamera(storage)).toEqual({ x: 1, y: 2, zoom: 0.25 });
+    expect(loadCamera(storage)).toEqual({ x: 1, y: 2, zoom: 0.16 });
   });
 
   it('keeps a 32-byte base64url session secret per tab session and replaces corrupted values', () => {

@@ -98,10 +98,11 @@ describe('limited zoom', () => {
 
   it('subscription is 3× the visible world area and never exceeds the server span', () => {
     const zoomedOut = { x: 0, y: 0, zoom: MIN_ZOOM };
-    const bounds = subscriptionBounds(zoomedOut, { width: 3000, height: 2000 });
+    const bounds = subscriptionBounds(zoomedOut, { width: 3000, height: 1200 });
+    expect(MIN_ZOOM).toBe(0.16);
     expect(bounds.max_x - bounds.min_x).toBe(MAX_SUBSCRIPTION_SPAN);
-    expect(bounds.max_y - bounds.min_y).toBe(24_000);
-    const visible = visibleBounds(zoomedOut, { width: 3000, height: 2000 });
+    expect(bounds.max_y - bounds.min_y).toBeCloseTo(22_500, 6);
+    const visible = visibleBounds(zoomedOut, { width: 3000, height: 1200 });
     expect(bounds.min_x).toBeLessThanOrEqual(visible.min_x);
     expect(bounds.max_x).toBeGreaterThanOrEqual(visible.max_x);
     const zoomedIn = subscriptionBounds({ x: 0, y: 0, zoom: 4 }, viewport);
@@ -119,7 +120,8 @@ describe('limited zoom', () => {
     expect(needsResubscribe(ahead, { ...base, x: 1000 }, viewport)).toBe(false);
     expect(needsResubscribe(ahead, { ...base, x: 1030 }, viewport)).toBe(true);
     // The same holds when the server span cap leaves less slack (deep zoom-out, wide screen).
-    for (const width of [3000, 3840, 6000]) {
+    // 6000 and 8000 CSS px at 16% see more than one subscription can hold.
+    for (const width of [3000, 3840, 6000, 8000]) {
       const wide = { width, height: 1000 };
       const out = { x: 0, y: 0, zoom: MIN_ZOOM };
       for (const heading of [[1, 0], [-0.6, 0.8], [0, 0]] as const) {

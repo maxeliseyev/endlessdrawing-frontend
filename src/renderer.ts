@@ -123,6 +123,18 @@ export function drawStroke(
   drawProjected(context, stroke, zoom, camera.x - viewport.width / 2 / zoom, camera.y - viewport.height / 2 / zoom);
 }
 
+/**
+ * A detached 2D context for hit-testing (isPointInPath/isPointInStroke only).
+ * Independent of the display canvas, which may hold a WebGL context instead.
+ */
+export function createHitContext(): CanvasRenderingContext2D {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D is unavailable in this browser.');
+  return context;
+}
+
 export function hitTest(
   context: CanvasRenderingContext2D, stroke: Drawable, point: Point,
   camera: Camera, viewport: Viewport, tolerance = ERASER_TOLERANCE,
