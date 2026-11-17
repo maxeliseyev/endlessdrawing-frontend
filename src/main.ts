@@ -74,8 +74,8 @@ const world = new SharedWorld({
   },
 });
 
-// Rendering backend (Canvas 2D with a tile cache today, WebGL later) behind
-// one interface: it receives drawn-set changes and pulls camera/overlays per frame.
+// Rendering backend (WebGL2 when the browser has it, otherwise Canvas 2D tiles).
+// It receives drawn-set changes and pulls camera/overlays per frame.
 const renderer: SceneRenderer = createSceneRenderer(canvas, {
   camera: () => camera,
   viewport: () => viewport,

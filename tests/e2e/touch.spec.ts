@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 import { createMockWorld, useMockWorld, type MockWorld } from './support/world';
 
 // Pointer sequences are dispatched as synthetic PointerEvents so the input
@@ -11,10 +12,7 @@ const INK = [32, 32, 32, 255];
 const WHITE = [255, 255, 255, 255];
 
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, point) => {
-    const scale = canvas.width / canvas.clientWidth;
-    return Array.from(canvas.getContext('2d')!.getImageData(Math.round(point.x * scale), Math.round(point.y * scale), 1, 1).data);
-  }, { x, y });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'pixel', x, y }) as Promise<number[]>;
 }
 
 type Kind = 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel';

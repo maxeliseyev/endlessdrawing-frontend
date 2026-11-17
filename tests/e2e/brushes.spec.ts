@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 import { useMockWorld } from './support/world';
 
 // The public canvas is server-backed; every page talks to a WS v1 test double.
@@ -10,35 +11,14 @@ async function image(page: Page): Promise<string> {
 
 // [differing channels, largest per-channel difference] against an ImageData kept in the page.
 async function keep(page: Page): Promise<void> {
-  await page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
-    (window as unknown as { kept: Uint8ClampedArray }).kept = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-  });
+  await page.locator('canvas').evaluate(canvasPixels, { op: 'keep' });
 }
 async function distance(page: Page): Promise<number[]> {
-  return page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
-    const a = (window as unknown as { kept: Uint8ClampedArray }).kept;
-    const b = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-    let max = 0, count = 0;
-    for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i]! - b[i]!); if (d) count++; max = Math.max(max, d); }
-    return [count, max];
-  });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'distance' }) as Promise<number[]>;
 }
 
 async function ink(page: Page): Promise<{ count: number; first: { x: number; y: number } | null }> {
-  return page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
-    const scale = c.width / c.clientWidth;
-    const size = Math.round(80 * scale);
-    const pixels = c.getContext('2d')!.getImageData(Math.round(260 * scale), Math.round(260 * scale), size, size).data;
-    let count = 0;
-    let first = null;
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i]! < 230) {
-        count++;
-        first ??= { x: 260 + ((i / 4) % size) / scale, y: 260 + Math.floor(i / 4 / size) / scale };
-      }
-    }
-    return { count, first };
-  });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'ink', x: 260, y: 260, sizeCss: 80 }) as Promise<{ count: number; first: { x: number; y: number } | null }>;
 }
 
 for (const locale of ['en-US', 'ru-RU']) {

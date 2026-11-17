@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 import { useMockWorld } from './support/world';
 
 // Keep the original interaction suite explicitly Russian; i18n.spec.ts covers
@@ -6,12 +7,7 @@ import { useMockWorld } from './support/world';
 test.use({ locale: 'ru-RU' });
 
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, point) => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Missing canvas context');
-    const scale = canvas.width / canvas.clientWidth;
-    return Array.from(ctx.getImageData(Math.round(point.x * scale), Math.round(point.y * scale), 1, 1).data);
-  }, { x, y });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'pixel', x, y }) as Promise<number[]>;
 }
 
 async function draw(page: Page, from = [250, 250], to = [450, 250]): Promise<void> {
@@ -58,6 +54,7 @@ test('opens directly on a white canvas: brand metadata, no welcome/banner/panel'
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('status')).toBeHidden();
   expect(await page.locator('body').innerText()).toBe('');
+  await expect(page.locator('canvas')).toHaveAttribute('data-renderer', 'webgl');
   await expect.poll(() => pixel(page, 50, 50)).toEqual([255, 255, 255, 255]);
   const rect = await page.locator('canvas').boundingBox();
   expect(rect).toEqual({ x: 0, y: 0, width: 1280, height: 720 });
@@ -287,4 +284,26 @@ test('blocked browser storage does not prevent drawing', async ({ page }) => {
   await page.reload();
   await draw(page);
   await expect.poll(() => pixel(page, 350, 250)).toEqual([32, 32, 32, 255]);
+});
+
+test('a translucent stroke is blended once where it covers itself', async ({ page }) => {
+  await palette(page);
+  await page.getByRole('slider', { name: 'Непрозрачность' }).evaluate((input: HTMLInputElement) => {
+    input.value = '0.5'; input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.getByRole('textbox', { name: 'Цвет HEX' }).fill('#000000');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(300, 300);
+  await expect.poll(async () => (await pixel(page, 300, 300))[0]).toBeLessThan(160);
+  const dot = await pixel(page, 300, 300);
+  expect(dot[0]).toBeGreaterThan(100);
+  await page.mouse.move(420, 400);
+  await page.mouse.down();
+  await page.mouse.move(520, 400, { steps: 6 });
+  await page.mouse.move(420, 400, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await pixel(page, 470, 400))[0]).toBeLessThan(160);
+  const retraced = await pixel(page, 470, 400);
+  expect(Math.abs(retraced[0]! - dot[0]!)).toBeLessThanOrEqual(8);
+  expect(retraced[3]).toBe(255);
 });

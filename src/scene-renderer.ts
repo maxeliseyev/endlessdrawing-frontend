@@ -3,6 +3,7 @@ import { strokeExtent, type Stroke, type StrokeDraft } from './model';
 import { drawStroke, Renderer } from './renderer';
 import type { SceneListener } from './scene';
 import { TileCache, type TileSource } from './tiles';
+import { createWebGLSceneRenderer } from './webgl/backend';
 
 /**
  * Rendering backend boundary of the public canvas.
@@ -10,8 +11,8 @@ import { TileCache, type TileSource } from './tiles';
  * `main.ts` only talks to this interface: it owns input, camera and the
  * shared world, the backend owns the display canvas context and everything
  * about how confirmed strokes get to the screen (caching, budgets, GPU).
- * Canvas 2D with tiles is the current backend; a WebGL backend implements the
- * same contract (see docs/webgl.md). Eraser hit-testing never uses the display
+ * WebGL2 is the backend when the browser can create it. Canvas 2D with tiles
+ * is the fallback (see docs/webgl.md). Eraser hit-testing never uses the display
  * context: a canvas can hold only one context type.
  */
 export interface SceneRenderer extends SceneListener {
@@ -36,9 +37,21 @@ export interface FrameInput {
 }
 
 export function createSceneRenderer(canvas: HTMLCanvasElement, input: FrameInput): SceneRenderer {
-  // The WebGL backend plugs in here, falling back to Canvas 2D when WebGL is
-  // unavailable or its context is lost.
+  // `?renderer=canvas2d` forces the tile renderer. Otherwise WebGL2 is used
+  // when the browser can create it; a missing context falls back here.
+  // A lost WebGL context is restored in place (the canvas cannot change type).
+  if (!forceCanvas2D()) {
+    const webgl = createWebGLSceneRenderer(canvas, input);
+    if (webgl) return webgl;
+  }
   return new Canvas2DSceneRenderer(canvas, input);
+}
+
+function forceCanvas2D(): boolean {
+  const search = globalThis.location?.search;
+  if (!search) return false;
+  const value = new URLSearchParams(search).get('renderer');
+  return value === 'canvas2d' || value === '2d';
 }
 
 export class Canvas2DSceneRenderer implements SceneRenderer {
@@ -48,6 +61,7 @@ export class Canvas2DSceneRenderer implements SceneRenderer {
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(canvas: HTMLCanvasElement, private readonly input: FrameInput) {
+    canvas.dataset.renderer = 'canvas2d';
     this.tiles = new TileCache(input.scene);
     this.renderer = new Renderer(canvas, () => this.paint());
   }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 import { createMockWorld, useMockWorld } from './support/world';
 
 // A new tab session starts at the server's entry hint (near live drawing);
@@ -7,10 +8,7 @@ test.use({ locale: 'en-US', viewport: { width: 1000, height: 700 } });
 
 const camera = (page: Page) => page.evaluate(() => JSON.parse(sessionStorage.getItem('endless-drawing.camera.v1') ?? 'null') as { x: number; y: number; zoom: number } | null);
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, point) => {
-    const scale = canvas.width / canvas.clientWidth;
-    return Array.from(canvas.getContext('2d')!.getImageData(Math.round(point.x * scale), Math.round(point.y * scale), 1, 1).data);
-  }, { x, y });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'pixel', x, y }) as Promise<number[]>;
 }
 
 test('a new session lands at the entry hint next to existing drawing; reload keeps the place', async ({ page, context }) => {

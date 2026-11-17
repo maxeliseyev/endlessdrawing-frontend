@@ -1,31 +1,18 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 
 // Real backend + PostgreSQL. Each run draws in a fresh random area so a shared
 // dev database does not affect results.
 const WHITE = [255, 255, 255, 255];
 
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, point) => {
-    const scale = canvas.width / canvas.clientWidth;
-    return Array.from(canvas.getContext('2d')!.getImageData(Math.round(point.x * scale), Math.round(point.y * scale), 1, 1).data);
-  }, { x, y });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'pixel', x, y }) as Promise<number[]>;
 }
 
 // Sparse brushes (spray) do not guarantee a solid pixel at one coordinate,
 // so acceptance checks a small region instead of a single sample point.
 async function regionInk(page: Page, cx: number, cy: number, halfWidth: number, halfHeight: number): Promise<boolean> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, area) => {
-    const scale = canvas.width / canvas.clientWidth;
-    const x0 = Math.max(0, Math.round((area.cx - area.halfWidth) * scale));
-    const y0 = Math.max(0, Math.round((area.cy - area.halfHeight) * scale));
-    const x1 = Math.min(canvas.width, Math.round((area.cx + area.halfWidth) * scale));
-    const y1 = Math.min(canvas.height, Math.round((area.cy + area.halfHeight) * scale));
-    const data = canvas.getContext('2d')!.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255 || data[i + 3] !== 255) return true;
-    }
-    return false;
-  }, { cx, cy, halfWidth, halfHeight });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'region', cx, cy, halfWidth, halfHeight }) as Promise<boolean>;
 }
 
 const frames = new WeakMap<Page, string[]>();

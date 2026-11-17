@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { canvasPixels } from '../support/pixels';
 import { createMockWorld, useMockWorld, type MockWorld } from './support/world';
 
 test.use({ locale: 'en-US' });
@@ -7,10 +8,7 @@ const INK = [32, 32, 32, 255];
 const WHITE = [255, 255, 255, 255];
 
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  return page.locator('canvas').evaluate((canvas: HTMLCanvasElement, point) => {
-    const scale = canvas.width / canvas.clientWidth;
-    return Array.from(canvas.getContext('2d')!.getImageData(Math.round(point.x * scale), Math.round(point.y * scale), 1, 1).data);
-  }, { x, y });
+  return page.locator('canvas').evaluate(canvasPixels, { op: 'pixel', x, y }) as Promise<number[]>;
 }
 
 async function draw(page: Page, from = [250, 250], to = [450, 250]): Promise<void> {
