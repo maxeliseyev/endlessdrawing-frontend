@@ -1,18 +1,11 @@
-import { MAX_POINTS, isBrush, isPoint, type Stroke } from '../model';
-import { object, ProtocolError, text, uuid } from './contracts';
+import type { Stroke } from '../model';
+import { object, parseStroke, ProtocolError, text, uuid } from '../wire';
+export { parseStroke };
 
 export class SceneLimitError extends Error {}
 export type ScenePhase = 'loading' | 'ready';
 export const MAX_SCENE_STROKES = 20_000;
 export const MAX_SCENE_POINTS = 1_000_000;
-
-export function parseStroke(value: unknown): Stroke {
-  const v = object(value);
-  if (!isBrush(v) || !Array.isArray(v.points) || v.points.length < 1 || v.points.length > MAX_POINTS ||
-      !v.points.every(isPoint) || !Number.isSafeInteger(v.seq) || (v.seq as number) <= 0 || typeof v.own !== 'boolean') throw new ProtocolError();
-  return { id: uuid(v.id), seq: v.seq as number, own: v.own, points: v.points,
-    brush: v.brush, width: v.width, color: v.color, opacity: v.opacity };
-}
 
 // Authoritative read-only scene. No create/delete requests and no fake ownership.
 export class AdminScene {

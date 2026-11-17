@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:lan": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --project=chromium",
-    "test:e2e:all": "playwright test"
+    "test:e2e:all": "playwright test",
+    "test:integration": "playwright test --config playwright.integration.config.ts"
   },
   "engines": {
     "node": ">=22.12.0"

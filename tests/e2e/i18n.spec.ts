@@ -1,19 +1,23 @@
 import { expect, test } from '@playwright/test';
+import { useMockWorld } from './support/world';
+
+// The public canvas is server-backed; every page talks to a WS v1 test double.
+test.beforeEach(async ({ context }) => { await useMockWorld(context); });
 
 const labels = {
   en: {
     dialog: 'Drawing tools', brush: 'Brush', hand: 'Hand', eraser: 'Eraser',
     round: 'Round brush', square: 'Square brush', width: 'Width', opacity: 'Opacity',
     color: 'Choose color', hex: 'HEX color', swatch: 'Color #E46C60',
-    prototype: 'Local prototype · not saved', pan: 'Space + drag — pan',
-    undo: 'Ctrl / ⌘ Z — undo', canvas: /canvas\. Right-click/,
+    undoButton: 'Undo', zoomIn: 'Zoom in', pan: 'Space + drag — pan',
+    undo: 'Ctrl / ⌘ Z — undo', canvas: /canvas\. Right-click, long-press/,
   },
   ru: {
     dialog: 'Инструменты рисования', brush: 'Кисть', hand: 'Рука', eraser: 'Ластик',
     round: 'Круглая кисть', square: 'Квадратная кисть', width: 'Толщина', opacity: 'Непрозрачность',
     color: 'Выбрать цвет', hex: 'Цвет HEX', swatch: 'Цвет #E46C60',
-    prototype: 'Локальный прототип · без сохранения', pan: 'Space + drag — перемещение',
-    undo: 'Ctrl / ⌘ Z — отмена', canvas: /холст\. Правый клик/,
+    undoButton: 'Отменить', zoomIn: 'Увеличить', pan: 'Space + drag — перемещение',
+    undo: 'Ctrl / ⌘ Z — отмена', canvas: /холст\. Правый клик, долгое нажатие/,
   },
 };
 
@@ -54,9 +58,11 @@ for (const scenario of scenarios) {
       await expect(page.getByRole('button', { name: ui.round, exact: true })).toBeVisible();
       await expect(page.getByRole('slider', { name: ui.width })).toBeVisible();
       await expect(page.getByLabel(ui.color, { exact: true })).toBeVisible();
-      await expect(dialog.getByText(ui.prototype, { exact: true })).toBeVisible();
-      await expect(dialog.locator('.palette-hint')).toContainText(ui.pan);
-      await expect(dialog.locator('.palette-hint')).toContainText(ui.undo);
+      await expect(dialog.getByRole('button', { name: ui.undoButton, exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: ui.zoomIn, exact: true })).toBeVisible();
+      await expect(dialog.getByText(/prototype|прототип/i)).toHaveCount(0);
+      await expect(dialog.locator('.hint-desktop')).toContainText(ui.pan);
+      await expect(dialog.locator('.hint-desktop')).toContainText(ui.undo);
       await page.getByRole('button', { name: ui.square, exact: true }).click();
       await page.getByRole('button', { name: ui.swatch, exact: true }).click();
       await expect(page.getByRole('textbox', { name: ui.hex })).toHaveValue('#E46C60');

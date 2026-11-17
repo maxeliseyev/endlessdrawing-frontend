@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { useMockWorld } from './support/world';
 
 // Keep the original interaction suite explicitly Russian; i18n.spec.ts covers
 // English, regional locales, browser preference order and unsupported languages.
@@ -29,7 +30,8 @@ async function camera(page: Page): Promise<{ x: number; y: number }> {
   return page.evaluate(() => JSON.parse(sessionStorage.getItem('endless-drawing.camera.v1') ?? 'null') as { x: number; y: number });
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
+  await useMockWorld(context);
   await page.addInitScript(() => {
     try {
       if (!sessionStorage.getItem('endless-drawing.camera.v1')) {
@@ -83,7 +85,7 @@ test('palette stays inside viewport and is operable by keyboard, then closes on 
   expect(box.y + box.height).toBeLessThanOrEqual(size.height - 7);
   await expect(page.getByRole('button', { name: 'Кисть', exact: true })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('slider', { name: 'Непрозрачность' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Увеличить', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Кисть', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
@@ -134,21 +136,23 @@ test('Space drag, middle drag and wheel move camera, not stored world geometry; 
   await page.mouse.move(550, 420);
   await page.mouse.up();
   await page.keyboard.up('Space');
-  await expect.poll(() => camera(page)).toEqual({ x: -50, y: -20 });
+  await expect.poll(() => camera(page)).toEqual({ x: -50, y: -20, zoom: 1 });
   await expect.poll(() => pixel(page, 400, 270)).toEqual([32, 32, 32, 255]);
   await page.mouse.move(500, 400);
   await page.mouse.down({ button: 'middle' });
   await page.mouse.move(520, 430);
   await page.mouse.up({ button: 'middle' });
-  await expect.poll(() => camera(page)).toEqual({ x: -70, y: -50 });
+  await expect.poll(() => camera(page)).toEqual({ x: -70, y: -50, zoom: 1 });
   await page.mouse.wheel(70, 50);
-  await expect.poll(() => camera(page)).toEqual({ x: 0, y: 0 });
+  await expect.poll(() => camera(page)).toEqual({ x: 0, y: 0, zoom: 1 });
   await expect.poll(() => pixel(page, 350, 250)).toEqual([32, 32, 32, 255]);
   await page.mouse.wheel(40, -80);
-  await expect.poll(() => camera(page)).toEqual({ x: 40, y: -80 });
+  await expect.poll(() => camera(page)).toEqual({ x: 40, y: -80, zoom: 1 });
   await page.reload();
-  expect(await camera(page)).toEqual({ x: 40, y: -80 });
-  await expect.poll(() => pixel(page, 350, 250)).toEqual([255, 255, 255, 255]); // prototype does not persist geometry
+  expect(await camera(page)).toEqual({ x: 40, y: -80, zoom: 1 });
+  // The stroke comes back from the server snapshot at its world position.
+  await expect.poll(() => pixel(page, 350, 330)).toEqual([32, 32, 32, 255]);
+  await expect.poll(() => pixel(page, 350, 250)).toEqual([255, 255, 255, 255]);
 });
 
 test('local eraser removes the top intersecting draft as a whole, undo then finds the remaining stroke', async ({ page }) => {
@@ -242,6 +246,7 @@ test('resizing preserves camera and recenters the same world stroke', async ({ p
 
 test('high-DPR backing canvas keeps input in CSS pixels', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 2 });
+  await useMockWorld(context);
   const page = await context.newPage();
   await page.goto('/');
   await draw(page);

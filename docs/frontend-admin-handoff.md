@@ -3,7 +3,7 @@
 ## Передаваемый результат
 
 - Vite multi-entry: `dist/index.html`, `dist/admin/index.html`, `dist/assets/*`, favicon. Передавать целый `dist/`.
-- Публичный `/` не импортирует admin entry и не проверяет admin-session; публичное рисование пока локальный прототип, не полноценный серверный WS-клиент.
+- Публичный `/` не импортирует admin entry и не проверяет admin-session; публичное рисование использует собственный WS-клиент `src/world.ts`.
 - Admin `/admin/`: EN/RU, session/options/password/get/verify, closed enrollment create/finish двух credentials и новый login, logout/expiry/401 без mutation replay.
 - HTTP клиент следует **единственному** контракту backend `docs/admin-api.md`. CSRF только RAM, fetch same-origin/no-store; нет токенов в Storage/URL/VITE и нет обхода MFA.
 - Явные base64url adapters для стандартных WebAuthn buffers/extension buffers, UV required, attestation none, без forcing attachment/биометрии.
