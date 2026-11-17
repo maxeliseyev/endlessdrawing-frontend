@@ -340,7 +340,18 @@ function enterWorld(value: AdminSession): void {
   const hand = button(t.hand, () => { mode = 'hand'; view?.setMode(mode); updateModes(); });
   function updateModes(): void { select.setAttribute('aria-pressed', String(mode === 'select')); hand.setAttribute('aria-pressed', String(mode === 'hand')); }
   const reload = button(t.refresh, () => view?.refresh());
-  toolbar.append(select, hand, reload, button(t.logout, logout)); updateModes();
+  const zoomOut = button('−', () => view?.zoomOut()); zoomOut.setAttribute('aria-label', t.zoomOut);
+  const zoomLabel = document.createElement('span'); zoomLabel.className = 'zoom-label'; zoomLabel.textContent = '100%';
+  const zoomIn = button('+', () => view?.zoomIn()); zoomIn.setAttribute('aria-label', t.zoomIn);
+  const jumpX = document.createElement('input'); jumpX.type = 'number'; jumpX.inputMode = 'decimal'; jumpX.placeholder = 'X'; jumpX.title = t.jumpTitle;
+  const jumpY = document.createElement('input'); jumpY.type = 'number'; jumpY.inputMode = 'decimal'; jumpY.placeholder = 'Y'; jumpY.title = t.jumpTitle;
+  const jump = button(t.jump, () => {
+    if (jumpX.value === '' || jumpY.value === '') return;
+    const x = Number(jumpX.value); const y = Number(jumpY.value);
+    if (Number.isFinite(x) && Number.isFinite(y)) view?.jumpTo(x, y);
+  });
+  jump.title = t.jumpTitle;
+  toolbar.append(select, hand, reload, zoomOut, zoomLabel, zoomIn, jumpX, jumpY, jump, button(t.logout, logout)); updateModes();
   const clear = button(t.clear, () => view?.clear());
   const review = button(t.hide, () => {
     if (!view || view.status !== 'ready' || pending || !view.selection.length) return;
@@ -418,7 +429,9 @@ function enterWorld(value: AdminSession): void {
     }
   }
   try {
-    view = new AdminView(required(layout, '.world-host'), t.canvas, (ids, state) => update(ids, state), () => status(t.limit, true));
+    view = new AdminView(required(layout, '.world-host'), t.canvas, (ids, state) => update(ids, state), () => status(t.limit, true), (camera) => {
+      zoomLabel.textContent = `${Math.round((camera.zoom ?? 1) * 100)}%`;
+    });
     update(view.selection, view.status);
   } catch (error) { showAuth('login', errorText(error)); }
 }

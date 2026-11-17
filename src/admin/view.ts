@@ -1,4 +1,4 @@
-import { clampWorld, pan, screenToWorld, subscriptionBounds, wheelPixels, worldToScreen, type Camera, type Viewport } from '../camera';
+import { clampWorld, pan, panScreen, screenToWorld, subscriptionBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport } from '../camera';
 import type { Point, Stroke } from '../model';
 import { drawStroke, hitTest, Renderer } from '../renderer';
 import { ReadOnlyWorld, type WorldStatus } from './world';
@@ -12,7 +12,7 @@ export class AdminView {
   private readonly events = new AbortController();
   private readonly observer: ResizeObserver;
   private readonly selected = new Set<string>();
-  private camera: Camera = { x: 0, y: 0 };
+  private camera: Camera = { x: 0, y: 0, zoom: 1 };
   private viewport: Viewport = { width: 1, height: 1 };
   private gesture: Gesture | undefined;
   private space = false;
@@ -24,7 +24,8 @@ export class AdminView {
 
   constructor(host: HTMLElement, label: string,
     private readonly changed: (ids: readonly string[], status: WorldStatus) => void,
-    private readonly limit: () => void) {
+    private readonly limit: () => void,
+    private readonly onCamera?: (camera: Camera) => void) {
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute('aria-label', label);
     host.append(this.canvas);
@@ -86,20 +87,38 @@ export class AdminView {
       const stroke = this.world.scene.strokes.get(id);
       if (!stroke) continue;
       const b = bounds(stroke);
-      const [x, y] = worldToScreen([b.minX, b.minY], this.camera, this.viewport);
-      ctx.strokeRect(x, y, b.maxX - b.minX, b.maxY - b.minY);
+      const [x0, y0] = worldToScreen([b.minX, b.minY], this.camera, this.viewport);
+      const [x1, y1] = worldToScreen([b.maxX, b.maxY], this.camera, this.viewport);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     }
     ctx.restore();
   }
-  private point(event: PointerEvent): Point {
+  private point(event: { clientX: number; clientY: number }): Point {
     const rect = this.canvas.getBoundingClientRect();
     return [event.clientX - rect.left, event.clientY - rect.top];
   }
   private move(dx: number, dy: number): void {
-    this.camera = pan(this.camera, dx, dy);
+    this.applyCamera(pan(this.camera, dx, dy));
+  }
+  private moveScreen(dx: number, dy: number): void {
+    this.applyCamera(panScreen(this.camera, dx, dy));
+  }
+  private applyCamera(next: Camera): void {
+    this.camera = next;
     this.selected.clear(); this.notify(); this.renderer.invalidate();
     this.world.setBounds(subscriptionBounds(this.camera, this.viewport));
+    this.onCamera?.(this.camera);
   }
+  zoomIn(): void { this.zoomBy(1.25); }
+  zoomOut(): void { this.zoomBy(1 / 1.25); }
+  private zoomBy(factor: number): void {
+    this.applyCamera(zoomAt(this.camera, zoomOf(this.camera) * factor,
+      [this.viewport.width / 2, this.viewport.height / 2], this.viewport));
+  }
+  jumpTo(x: number, y: number): void {
+    this.applyCamera({ x: clampWorld(x), y: clampWorld(y), zoom: zoomOf(this.camera) });
+  }
+  get zoom(): number { return zoomOf(this.camera); }
   private cursor(): void { this.canvas.style.cursor = this.locked ? 'wait' : this.gesture?.pan ? 'grabbing' : this.space || this.mode === 'hand' ? 'grab' : 'crosshair'; }
   private toggle(point: Point): void {
     if (this.locked || this.status !== 'ready') return;
@@ -131,8 +150,12 @@ export class AdminView {
       const point = this.point(event);
       if (Math.hypot(point[0] - g.origin[0], point[1] - g.origin[1]) > 4) g.moved = true;
       if (g.pan) {
-        const next = { x: clampWorld(g.camera.x + g.origin[0] - point[0]), y: clampWorld(g.camera.y + g.origin[1] - point[1]) };
-        this.move(next.x - this.camera.x, next.y - this.camera.y);
+        const zoom = zoomOf(g.camera);
+        const target = {
+          x: clampWorld(g.camera.x + (g.origin[0] - point[0]) / zoom),
+          y: clampWorld(g.camera.y + (g.origin[1] - point[1]) / zoom),
+        };
+        this.move(target.x - this.camera.x, target.y - this.camera.y);
       }
     }, { signal });
     this.canvas.addEventListener('pointerup', (event) => {
@@ -150,8 +173,13 @@ export class AdminView {
       event.preventDefault();
       if (this.locked) return;
       this.gesture = undefined;
-      const [x, y] = wheelPixels(event.deltaX, event.deltaY, event.deltaMode, this.viewport);
-      this.move(x, y); this.cursor();
+      if (event.ctrlKey || event.metaKey) {
+        this.applyCamera(zoomAt(this.camera, zoomOf(this.camera) * wheelZoomFactor(event.deltaY), this.point(event), this.viewport));
+      } else {
+        const [x, y] = wheelPixels(event.deltaX, event.deltaY, event.deltaMode, this.viewport);
+        this.moveScreen(x, y);
+      }
+      this.cursor();
     }, { passive: false, signal });
     window.addEventListener('keydown', (event) => {
       if (event.target !== this.canvas) return;
