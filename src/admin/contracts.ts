@@ -1,21 +1,7 @@
 // Wire source: ../endless-drawing-backend/docs/admin-api.md (from repo root).
-export class ProtocolError extends Error {
-  constructor() { super('Invalid server response'); }
-}
+import { object, ProtocolError, text, uuid } from '../wire';
+export { object, ProtocolError, text, uuid };
 
-export function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ProtocolError();
-  return value as Record<string, unknown>;
-}
-export function text(value: unknown, max = 4096): string {
-  if (typeof value !== 'string' || !value || value.length > max) throw new ProtocolError();
-  return value;
-}
-export function uuid(value: unknown): string {
-  const id = text(value, 36);
-  if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) throw new ProtocolError();
-  return id.toLowerCase();
-}
 export function timestamp(value: unknown): string {
   const result = text(value, 64);
   if (!Number.isFinite(Date.parse(result))) throw new ProtocolError();

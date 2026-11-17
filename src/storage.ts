@@ -1,9 +1,13 @@
 import { DEFAULT_PREFERENCES, isBrush, isTool, WORLD_LIMIT, type Preferences } from './model';
-import type { Camera } from './camera';
+import { clampZoom, type Camera } from './camera';
 
 export const STORAGE_KEYS = {
   preferences: 'endless-drawing.preferences.v1',
   camera: 'endless-drawing.camera.v1',
+  // Drawing-session secret: sessionStorage only, sent only in WS hello.
+  session: 'endless-drawing.session.v1',
+  // Own confirmed stroke UUIDs for undo; sessionStorage only.
+  undo: 'endless-drawing.undo.v1',
 } as const;
 
 export interface StoragePort {
@@ -42,7 +46,38 @@ export function loadCamera(storage: StoragePort | undefined, random = Math.rando
       typeof value.x === 'number' && typeof value.y === 'number' &&
       Number.isFinite(value.x) && Number.isFinite(value.y) &&
       Math.abs(value.x) <= WORLD_LIMIT && Math.abs(value.y) <= WORLD_LIMIT) {
-    return { x: value.x, y: value.y };
+    const zoom = 'zoom' in value && typeof value.zoom === 'number' ? clampZoom(value.zoom) : 1;
+    return { x: value.x, y: value.y, zoom };
   }
-  return { x: random() * 500 - 250, y: random() * 500 - 250 };
+  return { x: random() * 500 - 250, y: random() * 500 - 250, zoom: 1 };
+}
+
+const SECRET = /^[A-Za-z0-9_-]{43}$/;
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
+
+export function base64url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// 32 random bytes, base64url without padding. Storage failure keeps a
+// page-lifetime secret: drawing still works, ownership ends with the page.
+export function loadSessionSecret(
+  storage: StoragePort | undefined,
+  random: (bytes: Uint8Array) => Uint8Array = (b) => crypto.getRandomValues(b),
+): string {
+  try {
+    const stored = storage?.getItem(STORAGE_KEYS.session);
+    if (stored && SECRET.test(stored)) return stored;
+  } catch { /* fall through */ }
+  const secret = base64url(random(new Uint8Array(32)));
+  try { storage?.setItem(STORAGE_KEYS.session, secret); } catch { /* RAM only */ }
+  return secret;
+}
+
+export function loadUndo(storage: StoragePort | undefined, max = 500): string[] {
+  const value = load(storage, STORAGE_KEYS.undo);
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === 'string' && UUID.test(id)).slice(-max);
 }

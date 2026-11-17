@@ -40,8 +40,8 @@ describe('translation catalogues', () => {
   });
 
   it('localizes interpolated errors and accessible swatch labels', () => {
-    expect(translations.en.localLimit(500)).toBe('Local prototype limit: 500 strokes. Remove unwanted strokes with the eraser.');
-    expect(translations.ru.localLimit(500)).toBe('Лимит локального прототипа: 500 штрихов. Удалите ненужные ластиком.');
+    expect(translations.en.zoomReset('150%')).toBe('Zoom 150%. Reset to 100%');
+    expect(translations.ru.zoomReset('150 %')).toBe('Масштаб 150 %. Сбросить до 100%');
     expect(translations.en.colorSwatch('#202020')).toBe('Color #202020');
     expect(translations.ru.colorSwatch('#202020')).toBe('Цвет #202020');
     expect(translations.en.strokeTooLarge).toBe('This stroke is too large. Try drawing a shorter one.');

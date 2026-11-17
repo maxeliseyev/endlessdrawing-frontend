@@ -1,4 +1,4 @@
-import { backingSize, worldToScreen, type Camera, type Viewport } from './camera';
+import { backingSize, worldToScreen, zoomOf, type Camera, type Viewport } from './camera';
 import { chiselPolygons, sprayParticles } from './brush-geometry';
 import { ERASER_TOLERANCE, type Point, type Stroke, type StrokeDraft } from './model';
 
@@ -55,8 +55,9 @@ function pathFor(stroke: Drawable, camera: Camera, viewport: Viewport): Path2D {
   return path;
 }
 
-function setLineStyle(context: CanvasRenderingContext2D, stroke: Drawable, tolerance = 0): void {
-  context.lineWidth = stroke.width + tolerance * 2;
+// Screen-space line style: width scales with zoom, tolerance stays in CSS px.
+function setLineStyle(context: CanvasRenderingContext2D, stroke: Drawable, zoom: number, tolerance = 0): void {
+  context.lineWidth = stroke.width * zoom + tolerance * 2;
   context.lineCap = stroke.brush === 'round' ? 'round' : 'square';
   context.lineJoin = stroke.brush === 'round' ? 'round' : 'bevel';
 }
@@ -70,17 +71,22 @@ export function drawStroke(
   context.globalCompositeOperation = 'source-over';
   context.globalAlpha = stroke.opacity;
   context.fillStyle = context.strokeStyle = stroke.color;
-  setLineStyle(context, stroke);
+  const zoom = zoomOf(camera);
+  setLineStyle(context, stroke, zoom);
   if (stroke.brush === 'chisel' || stroke.brush === 'spray') {
     const [x, y] = worldToScreen(first, camera, viewport);
+    // Effect geometry is relative to the first point, so float precision of
+    // huge world coordinates never reaches the Canvas path.
     context.translate(x, y);
+    context.scale(zoom, zoom);
     // One union fill: overlap inside the nib/spray never reapplies opacity.
     context.fill(effectPath(stroke));
   } else if (stroke.points.length === 1) {
     const [x, y] = worldToScreen(first, camera, viewport);
     const path = new Path2D();
-    if (stroke.brush === 'round') path.arc(x, y, stroke.width / 2, 0, Math.PI * 2);
-    else path.rect(x - stroke.width / 2, y - stroke.width / 2, stroke.width, stroke.width);
+    const size = stroke.width * zoom;
+    if (stroke.brush === 'round') path.arc(x, y, size / 2, 0, Math.PI * 2);
+    else path.rect(x - size / 2, y - size / 2, size, size);
     context.fill(path);
   } else {
     // One stroke() operation composites the whole path once, including self-intersections.
@@ -96,20 +102,23 @@ export function hitTest(
   const first = stroke.points[0];
   if (!first) return false;
   const [x, y] = worldToScreen(point, camera, viewport);
+  const zoom = zoomOf(camera);
+  // `tolerance` is CSS px on screen; effect geometry is tested in world units.
+  const worldTolerance = tolerance / zoom;
   if (stroke.brush === 'spray') {
     const px = point[0] - first[0];
     const py = point[1] - first[1];
     // Analytic circle distances avoid engine-specific stroke-to-path behavior
     // when a tolerance stroke is wider than a tiny particle's diameter.
     for (const particle of sprayParticles(stroke)) {
-      if (Math.hypot(px - particle.x, py - particle.y) <= particle.radius + tolerance) return true;
+      if (Math.hypot(px - particle.x, py - particle.y) <= particle.radius + worldTolerance) return true;
     }
     return false;
   }
   if (stroke.brush === 'chisel') {
     context.save();
     context.resetTransform();
-    context.lineWidth = tolerance * 2;
+    context.lineWidth = worldTolerance * 2;
     context.lineJoin = 'round';
     const path = effectPath(stroke);
     const px = point[0] - first[0];
@@ -123,13 +132,13 @@ export function hitTest(
   if (stroke.points.length === 1) {
     const dx = Math.abs(point[0] - first[0]);
     const dy = Math.abs(point[1] - first[1]);
-    const half = stroke.width / 2 + tolerance;
+    const half = stroke.width / 2 + worldTolerance;
     return stroke.brush === 'round' ? Math.hypot(dx, dy) <= half : dx <= half && dy <= half;
   }
   context.save();
   // isPointInStroke coordinates are in canvas space and not affected by the CTM.
   context.resetTransform();
-  setLineStyle(context, stroke, tolerance);
+  setLineStyle(context, stroke, zoom, tolerance);
   const hit = context.isPointInStroke(pathFor(stroke, camera, viewport), x, y);
   context.restore();
   return hit;

@@ -1,4 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import { useMockWorld } from './support/world';
+
+// The public canvas is server-backed; every page talks to a WS v1 test double.
+test.beforeEach(async ({ context }) => { await useMockWorld(context); });
 
 async function image(page: Page): Promise<string> {
   return page.locator('canvas').evaluate((c: HTMLCanvasElement) => c.toDataURL());

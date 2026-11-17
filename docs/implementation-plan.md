@@ -8,10 +8,10 @@
 - i18n с первого этапа: типизированные EN/RU словари в `src/i18n.ts`; первый поддерживаемый язык из `navigator.languages`, fallback `navigator.language` при пустом списке, затем английский. Региональные теги сопоставляются по базовому языку. Язык выбирается при загрузке без Storage, отдельного экрана и постоянного переключателя; бренд/фраза не переводятся.
 - Начальная кисть: round / #202020 / 6 / 1. Переключение инструмента её не сбрасывает.
 - Ластик: допуск 4 CSS px; линия hit-test использует тот же Canvas path и стили, ширина увеличена на 8px. Это небольшой консервативный допуск для square-концов/скосов.
-- Wheel: pixel как есть, line = 16 CSS px, page = размер viewport по соответствующей оси. Масштаб всегда 1.
-- Renderer **локального прототипа**: round/round, square/bevel, chisel (фиксированный плоский наконечник -45°) и spray (distance sampling, seed из lowercase UUID). Общая opacity за один stroke/fill; preview/ластик используют ту же геометрию. Новые enum и bounds ещё нужно принять на backend: [brushes.md](brushes.md).
+- Wheel: pixel как есть, line = 16 CSS px, page = размер viewport по соответствующей оси; с Ctrl/⌘ — зум (см. этап Z).
+- Общий renderer: round/round, square/bevel, chisel (фиксированный плоский наконечник -45°) и spray (distance sampling, seed из lowercase UUID). Общая opacity за один stroke/fill; preview/ластик используют ту же геометрию. Enum и bounds приняты backend: [brushes.md](brushes.md).
 - Preview использует тот же renderer. Минимальная дистанция между samples 0.75 world units; при 2000 точках прореживаем полный путь, сохраняя начало/конец, затем продолжаем ввод. Это ограниченный прототипный алгоритм: повторное прореживание может сглаживать длинный детальный жест, требуется визуальная проверка перед релизом.
-- Лимит локального прототипа: 500 completed drafts в памяти, без тихого вытеснения; переполнение/oversize дают кратковременную ошибку. Ограничение кеша общего мира будет отдельным.
+- Кеш общего мира ограничен 20 000 штрихов / 1 000 000 точек, неподтверждённых — 64; переполнение/oversize дают кратковременное сообщение.
 - Escape / pointercancel / lost capture / blur / hidden / resize отменяют незаконченный жест. При отмене панорамирования возвращаем начальную камеру; wheel отменяет текущий жест перед панорамированием.
 
 ## 2. Открыто перед интеграцией
@@ -41,25 +41,30 @@
 - [x] TypeScript + production build, 63 unit-теста, 75 E2E (25 сценариев × Chromium/Firefox/WebKit на macOS). Проверены чистый старт без overlays, metadata, preview/отмена, палитра/Tab/focus, настройки/reload, панорамирование, локальные ластик/undo, opacity/self-intersection, hit-test, resize, DPR=2, заблокированный Storage и локализация EN/RU/unsupported locales, favicon, новые формы/детерминизм/opacity/hit-test.
 - [ ] Финальная ручная визуальная приёмка длинных детальных жестов и реальных desktop-браузеров, включая нижние поддерживаемые версии.
 
-### B. Публичный транспорт и состояние — следующая итерация
+### B. Публичный транспорт и состояние — сделано (16.11.2026)
 
-Read-only snapshot/live, runtime validation и reconnect уже реализованы отдельно для admin (этап D), но это не завершает публичные create/pending/undo ниже.
-
-- [ ] Типизированные сообщения и runtime-валидация входящего JSON.
-- [ ] Transport interface + детерминированный mock WS: hello, chunks, ack/error, create/delete, сбои и повторы.
-- [ ] Web Crypto 32-byte session secret, base64url, sessionStorage; hello без утечек.
-- [ ] Preview / pending / confirmed разделены; подтверждения по request_id; dedup по UUID.
-- [ ] Snapshot staging → атомарная замена на end; subscription_id; события/ack во время snapshot.
-- [ ] Ограниченный viewport-кеш и prefetch, throttle подписок.
-- [ ] Сессионный undo независимо от кеша, только подтверждённые создания; ownership и seq для ластика.
-- [ ] Reconnect с backoff, новый hello/snapshot, resync, повтор идентичного create без дублей.
+- [x] Типизированные сообщения и runtime-валидация входящего JSON (`src/wire.ts`, общая с admin).
+- [x] Transport (`src/world.ts`) + детерминированный WS-двойник для E2E (`tests/e2e/support/world.ts`) и unit-тесты с фейковым сокетом: hello, chunks, ack/error, create/delete, сбои, повторы, rate limit, ack timeout.
+- [x] Web Crypto 32-byte session secret, base64url, sessionStorage; hello без утечек (не в URL/логах/stroke).
+- [x] Preview / pending / confirmed разделены; подтверждения по request_id; dedup по UUID.
+- [x] Snapshot staging → атомарная замена на end; subscription_id; own ack во время staging не теряется.
+- [x] Ограниченный кеш (20k/1M) и prefetch 3× с гистерезисом, throttle подписок, cap 30000.
+- [x] Сессионный undo (sessionStorage) независимо от кеша, только подтверждённые; undo pending — до/после ack; ластик только own, максимальный seq.
+- [x] Reconnect с backoff, новый hello/snapshot, resync, повтор идентичного create без дублей.
 
 ### C. Backend и совместная приёмка
 
-- [ ] Реальный `/ws`, раздача `dist/`, согласование proxy/origins.
-- [ ] E2E с двумя независимыми контекстами: создание/чужое удаление/собственное удаление/reload.
-- [ ] Гонки snapshot/create/delete, disconnect до ack, повтор UUID, старые подписки, rate limits.
-- [ ] Chromium + Firefox + WebKit, одинаковая композиция и thick-stroke bounds.
+- [x] Реальный `/ws`, раздача `dist/` backend-ом, origins по умолчанию для 5173/3000.
+- [x] `npm run test:integration`: два независимых контекста против реального backend+PostgreSQL — создание, чужое удаление запрещено, reload/ownership, undo у всех, `chisel`/`spray`. Chromium + Firefox + WebKit.
+- [ ] Гонки snapshot/create/delete и disconnect до ack с реальным сервером (сейчас — unit/mock E2E; серверная сторона покрыта backend-тестами).
+- [ ] Визуальная сверка thick-stroke bounds на краю подписки в трёх движках, нагрузка плотных сцен (особенно spray при 25%).
+- [ ] HTTPS/WSS стенд, production Origin.
+
+### Z. Ограниченный зум — сделано (16.11.2026, решение владельца)
+
+- [x] `zoom ∈ [0.25, 4]`: Ctrl/⌘+wheel и pinch трекпада вокруг курсора, Safari GestureEvent, Ctrl/⌘ `=`/`-`/`0`, кнопки в палитре, pinch двумя пальцами.
+- [x] Ширина в world units, допуск ластика 4 CSS px на экране; effect-геометрия масштабируется без потери точности на больших координатах.
+- [x] Подписка в world units, ≤ `VIEWPORT_MAX_SPAN`; камера с zoom в sessionStorage. Admin остаётся на 1×.
 
 ### D. Закрытая модерация — обязательно до публичного запуска
 
@@ -75,13 +80,13 @@ Read-only snapshot/live, runtime validation и reconnect уже реализов
 - [ ] Интеграционные проверки обоих факторов/запретов/CSRF/отзыва/аудита и два публичных контекста: скрытое исчезает у всех, не возвращается после snapshot/reload/повтора create.
 - [ ] Согласовать правила модерации и хранения с владельцем, подготовить закрытую инструкцию администратора и восстановления доступа.
 
-### E. Планшеты с пером и touch — бэклог после модерации
+### E. Touch, Apple Pencil, iPhone/iPad — реализовано, ждёт проверки на устройствах
 
-- [ ] Отдельный этап после D, не реализация текущей итерации: [tablet-input-backlog.md](tablet-input-backlog.md).
-- [ ] Перо рисует, палец при использовании пера панорамирует. Без пера: один палец — выбранный инструмент, два — перемещение холста.
-- [ ] Второй палец отменяет незавершённый штрих до отправки; оставшийся после панорамирования палец не начинает рисовать автоматически.
-- [ ] Long press без движения открывает палитру, отменяя незавершённую точку; таймер сбрасывается при движении/втором пальце/cancel.
-- [ ] Undo внутри открытой палитры, крупные touch targets, EN/RU; без постоянных панелей. Нативное long-press меню подавлять только на холсте, не в полях.
-- [ ] Проверить palm rejection и переходы pen/touch на реальных планшетах. Сначала планшеты с пером, без зума и чувствительности к нажатию; телефоны/полный mobile UX не включать неявно.
+- [x] State machine mouse/pen/touch, pinch из двух pointerId, `blocked` после pinch/long press. Спецификация и числа — [tablet-input-backlog.md](tablet-input-backlog.md).
+- [x] Перо рисует; после первого pen-события пальцы только навигируют; палец во время штриха пером игнорируется.
+- [x] Второй палец отменяет незавершённый штрих без отправки; оставшийся палец не рисует.
+- [x] Long press 500 мс / 10 px открывает палитру и отбрасывает точку; touch-ластик — по тапу/движению.
+- [x] Undo и масштаб внутри палитры, цели ≥44 px, HEX 16 px, bottom sheet на телефоне, safe area, viewport-fit=cover, подавление нативных жестов/callout только на холсте.
+- [ ] Приёмка на реальных iPhone/iPad (+ Apple Pencil): palm rejection, системные жесты, клавиатура iOS, ориентация, фон/возврат.
 
-Локальный прототип **не является** завершённым MVP, общим миром или системой постоянного хранения. В `sessionStorage` сейчас только камера, в `localStorage` — инструмент/кисть; геометрия и локальный undo исчезают при reload. Секрет и постоянный undo публичного рисования будут добавлены вместе с его транспортом. Admin отдельно имеет read-only WS-сцену и случайный anonymous secret в RAM; это не публичное серверное рисование и не авторизация удаления.
+Публичный холст — общий мир через backend. Это ещё не публичный запуск: нужны HTTPS-стенд, модерация на VPS (этап D), ограничения по IP, бэкапы, нагрузочный тест и приёмка на реальных устройствах.

@@ -1,14 +1,30 @@
 import './style.css';
 import { resolveLocale, translations } from './i18n';
-import { clampWorld, pan, screenToWorld, wheelPixels, type Camera, type Viewport } from './camera';
-import { appendPoint, fitsCreateMessage, type Point, type StrokeDraft } from './model';
+import {
+  clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
+  visibleBounds, wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
+} from './camera';
+import { appendPoint, fitsCreateMessage, newId, strokeExtent, type Point, type StrokeDraft } from './model';
 import { Palette, toolCursor } from './palette';
 import { drawStroke, hitTest, Renderer } from './renderer';
-import { browserStorage, loadCamera, loadPreferences, save, STORAGE_KEYS } from './storage';
+import {
+  browserStorage, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS,
+} from './storage';
+import { MAX_UNDO, SharedWorld, type Notice } from './world';
 
+// Every gesture belongs to exactly one pointer, except a two-finger pinch.
+// `blocked` swallows the remaining fingers after a pinch or a long press until
+// all of them are lifted: a leftover finger never starts drawing by itself.
 type Gesture =
-  | { kind: 'draw'; pointerId: number; stroke: StrokeDraft }
-  | { kind: 'pan'; pointerId: number; origin: Point; camera: Camera };
+  | { kind: 'draw'; pointerId: number; type: string; stroke: StrokeDraft }
+  | { kind: 'pan'; pointerId: number; type: string; origin: Point; camera: Camera }
+  | { kind: 'erase'; pointerId: number; type: string; origin: Point; moved: boolean }
+  | { kind: 'pinch'; a: number; b: number; a0: Point; b0: Point; camera: Camera }
+  | { kind: 'blocked' };
+
+const LONG_PRESS_MS = 500;
+const TOUCH_SLOP = 10; // CSS px of finger movement that still counts as "holding still"
+const ZOOM_STEP = 1.25;
 
 const locale = resolveLocale(navigator.languages, navigator.language);
 const messages = translations[locale];
@@ -30,27 +46,51 @@ let viewport: Viewport = { width: window.innerWidth, height: window.innerHeight 
 let gesture: Gesture | undefined;
 let space = false;
 let cameraDirty = false;
+// Once a pen is used, fingers only navigate (palm/hand on the screen).
+let penSeen = false;
+const touches = new Map<number, Point>();
+let longPress: { timer: ReturnType<typeof setTimeout>; pointerId: number; origin: Point } | undefined;
 
-// Prototype-only, ephemeral drawings. These are NOT server-confirmed objects,
-// NOT a persistent undo stack, and are never assigned a fake server seq/own.
-const localDrafts: StrokeDraft[] = [];
-const MAX_LOCAL_DRAFTS = 500;
+const world = new SharedWorld({
+  secret: loadSessionSecret(session),
+  undo: { load: () => loadUndo(session, MAX_UNDO), save: (ids) => { save(session, STORAGE_KEYS.undo, ids); } },
+  changed: () => renderer.invalidate(),
+  notice: (notice) => notify(noticeText(notice), notice),
+});
 
 const renderer = new Renderer(canvas, () => {
-  for (const stroke of localDrafts) drawStroke(renderer.context, stroke, camera, viewport);
-  if (gesture?.kind === 'draw') drawStroke(renderer.context, gesture.stroke, camera, viewport);
+  const context = renderer.context;
+  const view = visibleBounds(camera, viewport);
+  const scene = world.scene;
+  for (const stroke of scene.strokes()) {
+    if (scene.hidden.has(stroke.id) || !intersects(strokeExtent(stroke), view)) continue;
+    drawStroke(context, stroke, camera, viewport);
+  }
+  // Unconfirmed own strokes: on top, in creation order, until their ack.
+  for (const draft of scene.visiblePending()) drawStroke(context, draft, camera, viewport);
+  if (gesture?.kind === 'draw') drawStroke(context, gesture.stroke, camera, viewport);
   if (cameraDirty) {
     save(session, STORAGE_KEYS.camera, camera);
     cameraDirty = false;
   }
 });
 
-const palette = new Palette(preferences, (next) => {
-  preferences = next;
-  save(local, STORAGE_KEYS.preferences, preferences);
-  updateCursor();
-}, () => canvas.focus({ preventScroll: true }), messages, locale);
+const palette = new Palette(preferences, {
+  change: (next) => {
+    preferences = next;
+    save(local, STORAGE_KEYS.preferences, preferences);
+    updateCursor();
+  },
+  restoreFocus: () => canvas.focus({ preventScroll: true }),
+  undo: () => undo(),
+  zoom: (direction) => {
+    const center: Point = [viewport.width / 2, viewport.height / 2];
+    const zoom = direction === 'reset' ? 1 : zoomOf(camera) * (direction === 'in' ? ZOOM_STEP : 1 / ZOOM_STEP);
+    setCamera(zoomAt(camera, zoom, center, viewport));
+  },
+}, messages, locale);
 app.append(palette.element);
+palette.setZoom(zoomOf(camera));
 
 const status = document.createElement('p');
 status.className = 'error-notice';
@@ -58,11 +98,19 @@ status.setAttribute('role', 'status');
 status.hidden = true;
 app.append(status);
 let statusTimeout: ReturnType<typeof setTimeout> | undefined;
-function notify(message: string): void {
+const lastNotice = new Map<string, number>();
+function notify(message: string, key = message): void {
+  // Brief and unobtrusive; the same problem is not repeated every second.
+  const now = Date.now();
+  if (now - (lastNotice.get(key) ?? -Infinity) < 8000 && !status.hidden) return;
+  lastNotice.set(key, now);
   status.textContent = message;
   status.hidden = false;
   clearTimeout(statusTimeout);
   statusTimeout = setTimeout(() => { status.hidden = true; }, 5000);
+}
+function noticeText(notice: Notice): string {
+  return messages[notice];
 }
 
 function updateCursor(): void {
@@ -72,96 +120,228 @@ function updateCursor(): void {
 function setCamera(next: Camera): void {
   camera = next;
   cameraDirty = true;
+  palette.setZoom(zoomOf(camera));
   renderer.invalidate();
+  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport));
 }
 
-function localPoint(event: PointerEvent): Point {
+function localPoint(event: { clientX: number; clientY: number }): Point {
   const rect = canvas.getBoundingClientRect();
   return [event.clientX - rect.left, event.clientY - rect.top];
 }
 
-function worldPoint(event: PointerEvent): Point {
-  const [x, y] = screenToWorld(localPoint(event), camera, viewport);
+function toWorld(point: Point): Point {
+  const [x, y] = screenToWorld(point, camera, viewport);
   return [clampWorld(x), clampWorld(y)];
+}
+
+function clearLongPress(): void {
+  if (longPress) clearTimeout(longPress.timer);
+  longPress = undefined;
 }
 
 function releaseGesture(cancel: boolean): void {
   const previous = gesture;
   gesture = undefined;
+  clearLongPress();
   if (previous?.kind === 'pan' && cancel) setCamera(previous.camera);
-  if (previous && canvas.hasPointerCapture(previous.pointerId)) canvas.releasePointerCapture(previous.pointerId);
+  if (previous && 'pointerId' in previous && canvas.hasPointerCapture(previous.pointerId)) {
+    canvas.releasePointerCapture(previous.pointerId);
+  }
   renderer.invalidate();
   updateCursor();
 }
 
-canvas.addEventListener('pointerdown', (event) => {
-  if (event.pointerType === 'touch' || (event.button !== 0 && event.button !== 1)) return;
-  event.preventDefault();
-  if (palette.isOpen) { palette.close(); return; }
-  if (gesture) return;
-  canvas.focus({ preventScroll: true });
-  if (event.button === 1 || space || preferences.tool === 'hand') {
-    gesture = { kind: 'pan', pointerId: event.pointerId, origin: localPoint(event), camera: { ...camera } };
+// The eraser only ever targets our own strokes: the newest unconfirmed one, or
+// the confirmed own stroke with the highest seq. The server checks ownership.
+function eraseAt(screen: Point): void {
+  const point = toWorld(screen);
+  const context = renderer.context;
+  const pending = world.scene.visiblePending();
+  for (let index = pending.length - 1; index >= 0; index--) {
+    const draft = pending[index]!;
+    if (hitTest(context, draft, point, camera, viewport)) { world.erase(draft.id); return; }
+  }
+  const strokes = world.scene.strokes();
+  const tolerance = 8 / zoomOf(camera);
+  const probe = { min_x: point[0] - tolerance, min_y: point[1] - tolerance, max_x: point[0] + tolerance, max_y: point[1] + tolerance };
+  for (let index = strokes.length - 1; index >= 0; index--) {
+    const stroke = strokes[index]!;
+    if (!stroke.own || world.scene.hidden.has(stroke.id) || !intersects(strokeExtent(stroke), probe)) continue;
+    if (hitTest(context, stroke, point, camera, viewport)) { world.erase(stroke.id); return; }
+  }
+}
+
+function commit(stroke: StrokeDraft): void {
+  if (!fitsCreateMessage(stroke)) { notify(messages.strokeTooLarge); return; }
+  // Completed geometry is immutable from here on (UUID + payload are retried as-is).
+  Object.freeze(stroke.points);
+  world.create(stroke);
+}
+
+function undo(): void {
+  if (gesture && gesture.kind !== 'blocked') { releaseGesture(true); return; }
+  world.undo();
+  renderer.invalidate();
+}
+
+function begin(event: PointerEvent): void {
+  const point = localPoint(event);
+  const type = event.pointerType;
+  const { pointerId } = event;
+  if (event.button === 1 || space || preferences.tool === 'hand' || (type === 'touch' && penSeen)) {
+    gesture = { kind: 'pan', pointerId, type, origin: point, camera: { ...camera } };
   } else if (preferences.tool === 'eraser') {
-    const point = worldPoint(event);
-    // In this local prototype all drafts belong to this page. Server-backed
-    // selection will use only confirmed own:true strokes, ordered by seq.
-    const index = localDrafts.findLastIndex((stroke) => hitTest(renderer.context, stroke, point, camera, viewport));
-    if (index !== -1) localDrafts.splice(index, 1);
-    renderer.invalidate();
-    return;
+    gesture = { kind: 'erase', pointerId, type, origin: point, moved: type !== 'touch' };
+    // A finger erases on movement or tap, so a long press can open tools instead.
+    if (type !== 'touch') eraseAt(point);
   } else {
     gesture = {
-      kind: 'draw', pointerId: event.pointerId,
+      kind: 'draw', pointerId, type,
       stroke: {
-        id: crypto.randomUUID(), points: [worldPoint(event)],
+        id: newId(), points: [toWorld(point)],
         brush: preferences.brush, width: preferences.width, color: preferences.color, opacity: preferences.opacity,
       },
     };
   }
-  canvas.setPointerCapture(event.pointerId);
+  try { canvas.setPointerCapture(pointerId); } catch { /* pointer already gone */ }
+  if (type === 'touch') startLongPress(event);
   renderer.invalidate();
   updateCursor();
+}
+
+function startPinch(): void {
+  const ids = [...touches.keys()].slice(0, 2);
+  const [a, b] = ids;
+  if (a === undefined || b === undefined) return;
+  // The second finger cancels an unfinished stroke: nothing is sent, nothing
+  // enters undo. A one-finger pan simply continues as a pinch.
+  releaseGesture(false);
+  gesture = { kind: 'pinch', a, b, a0: touches.get(a)!, b0: touches.get(b)!, camera: { ...camera } };
+  renderer.invalidate();
+  updateCursor();
+}
+
+function startLongPress(event: PointerEvent): void {
+  clearLongPress();
+  const { pointerId, clientX, clientY } = event;
+  const origin = localPoint(event);
+  const timer = setTimeout(() => {
+    longPress = undefined;
+    if (touches.size !== 1 || !touches.has(pointerId)) return;
+    // Opening tools discards the initial dot / undoes the tiny pan.
+    releaseGesture(true);
+    gesture = { kind: 'blocked' };
+    palette.open(clientX, clientY, false);
+  }, LONG_PRESS_MS);
+  longPress = { timer, pointerId, origin };
+}
+
+function gesturePointer(g: Gesture | undefined): number | undefined {
+  return g && 'pointerId' in g ? g.pointerId : undefined;
+}
+
+canvas.addEventListener('pointerdown', (event) => {
+  const touch = event.pointerType === 'touch';
+  if (!touch && event.button !== 0 && event.button !== 1) return;
+  event.preventDefault();
+  if (touch) touches.set(event.pointerId, localPoint(event));
+  if (palette.isOpen) {
+    palette.close(!touch);
+    if (touch) gesture ??= { kind: 'blocked' };
+    return;
+  }
+  if (event.pointerType === 'pen') {
+    penSeen = true;
+    // The pen wins over any finger gesture in progress.
+    if (gesture && (gesture.kind === 'pinch' || gesture.kind === 'blocked' || gesture.type === 'touch')) releaseGesture(false);
+  }
+  if (touch) {
+    const active = gesture;
+    // A pen/mouse stroke in progress ignores fingers and palms.
+    if (active && 'type' in active && active.type !== 'touch') return;
+    if (touches.size >= 2) {
+      if (active?.kind !== 'pinch') startPinch();
+      return;
+    }
+    if (active) return;
+  } else if (gesture) return;
+  if (!touch) canvas.focus({ preventScroll: true });
+  begin(event);
 });
 
 canvas.addEventListener('pointermove', (event) => {
-  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const id = event.pointerId;
+  if (event.pointerType === 'touch' && touches.has(id)) touches.set(id, localPoint(event));
+  if (longPress?.pointerId === id) {
+    const [x, y] = localPoint(event);
+    if (Math.hypot(x - longPress.origin[0], y - longPress.origin[1]) > TOUCH_SLOP) clearLongPress();
+  }
+  if (gesture?.kind === 'pinch') {
+    const a1 = touches.get(gesture.a);
+    const b1 = touches.get(gesture.b);
+    if (a1 && b1 && (id === gesture.a || id === gesture.b)) setCamera(pinch(gesture.camera, gesture.a0, gesture.b0, a1, b1, viewport));
+    return;
+  }
+  if (!gesture || gesturePointer(gesture) !== id) return;
   if (gesture.kind === 'pan') {
     const [x, y] = localPoint(event);
-    setCamera(pan(gesture.camera, gesture.origin[0] - x, gesture.origin[1] - y));
-  } else {
+    setCamera(panScreen(gesture.camera, gesture.origin[0] - x, gesture.origin[1] - y));
+  } else if (gesture.kind === 'draw') {
     const coalesced = event.getCoalescedEvents?.() ?? [];
-    for (const sample of coalesced.length ? coalesced : [event]) appendPoint(gesture.stroke.points, worldPoint(sample));
+    for (const sample of coalesced.length ? coalesced : [event]) appendPoint(gesture.stroke.points, toWorld(localPoint(sample)));
     renderer.invalidate();
+  } else if (gesture.kind === 'erase') {
+    const point = localPoint(event);
+    if (!gesture.moved && Math.hypot(point[0] - gesture.origin[0], point[1] - gesture.origin[1]) <= TOUCH_SLOP) return;
+    gesture.moved = true;
+    const coalesced = event.getCoalescedEvents?.() ?? [];
+    for (const sample of coalesced.length ? coalesced : [event]) eraseAt(localPoint(sample));
   }
 });
 
+function endTouch(id: number): boolean {
+  touches.delete(id);
+  if (longPress?.pointerId === id) clearLongPress();
+  if (gesture?.kind === 'pinch') {
+    if (id === gesture.a || id === gesture.b) gesture = touches.size ? { kind: 'blocked' } : undefined;
+    return true;
+  }
+  if (gesture?.kind === 'blocked') {
+    if (touches.size === 0) gesture = undefined;
+    return true;
+  }
+  return false;
+}
+
 canvas.addEventListener('pointerup', (event) => {
-  if (!gesture || gesture.pointerId !== event.pointerId) return;
-  // Do not complete a left-button gesture when an unrelated button is released.
-  if (event.buttons !== 0) return;
+  const touch = event.pointerType === 'touch';
+  if (touch && endTouch(event.pointerId)) return;
+  if (!gesture || gesturePointer(gesture) !== event.pointerId) return;
+  // Do not complete a left-button gesture when an unrelated mouse button is released.
+  if (!touch && event.buttons !== 0) return;
   if (gesture.kind === 'draw') {
-    appendPoint(gesture.stroke.points, worldPoint(event), true);
-    if (localDrafts.length >= MAX_LOCAL_DRAFTS) {
-      notify(messages.localLimit(MAX_LOCAL_DRAFTS));
-    } else if (!fitsCreateMessage(gesture.stroke)) {
-      notify(messages.strokeTooLarge);
-    } else {
-      localDrafts.push(gesture.stroke);
-    }
+    appendPoint(gesture.stroke.points, toWorld(localPoint(event)), true);
+    commit(gesture.stroke);
+  } else if (gesture.kind === 'erase' && !gesture.moved) {
+    eraseAt(localPoint(event));
   }
   releaseGesture(false);
 });
 
-canvas.addEventListener('pointercancel', (event) => {
-  if (gesture?.pointerId === event.pointerId) releaseGesture(true);
-});
+function cancelPointer(event: PointerEvent): void {
+  if (event.pointerType === 'touch' && endTouch(event.pointerId)) return;
+  if (gesturePointer(gesture) === event.pointerId) releaseGesture(true);
+}
+canvas.addEventListener('pointercancel', cancelPointer);
 canvas.addEventListener('lostpointercapture', (event) => {
-  if (gesture?.pointerId === event.pointerId) releaseGesture(true);
+  // Touch ends release capture implicitly; pointerup has already run then.
+  if (gesturePointer(gesture) === event.pointerId) releaseGesture(true);
 });
 canvas.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   releaseGesture(true);
+  if (touches.size) gesture = { kind: 'blocked' };
   space = false;
   updateCursor();
   palette.open(event.clientX || viewport.width / 2, event.clientY || viewport.height / 2);
@@ -171,9 +351,36 @@ canvas.addEventListener('wheel', (event) => {
   event.preventDefault();
   if (palette.isOpen) return;
   releaseGesture(true);
+  // Trackpad pinch arrives as ctrl+wheel in Chromium/Firefox.
+  if (event.ctrlKey || event.metaKey) {
+    const [, dy] = wheelPixels(0, event.deltaY, event.deltaMode, viewport);
+    setCamera(zoomAt(camera, zoomOf(camera) * wheelZoomFactor(dy), localPoint(event), viewport));
+    return;
+  }
   const [dx, dy] = wheelPixels(event.deltaX, event.deltaY, event.deltaMode, viewport);
-  setCamera(pan(camera, dx, dy));
+  setCamera(panScreen(camera, dx, dy));
 }, { passive: false });
+
+// Safari (macOS trackpad / iOS) pinch: non-standard GestureEvent. Page zoom is
+// always suppressed; on touch screens pointer events drive the pinch instead.
+type SafariGesture = Event & { scale: number; clientX: number; clientY: number };
+let gestureZoom: number | undefined;
+window.addEventListener('gesturestart', (event) => {
+  event.preventDefault();
+  if (touches.size || palette.isOpen) return;
+  releaseGesture(true);
+  gestureZoom = zoomOf(camera);
+}, { passive: false } as AddEventListenerOptions);
+window.addEventListener('gesturechange', (event) => {
+  event.preventDefault();
+  const g = event as SafariGesture;
+  if (gestureZoom === undefined || touches.size || !Number.isFinite(g.scale)) return;
+  setCamera(zoomAt(camera, gestureZoom * g.scale, localPoint(g), viewport));
+}, { passive: false } as AddEventListenerOptions);
+window.addEventListener('gestureend', (event) => {
+  event.preventDefault();
+  gestureZoom = undefined;
+}, { passive: false } as AddEventListenerOptions);
 
 function keyboardInCanvas(event: KeyboardEvent): boolean {
   if (palette.isOpen) return false;
@@ -190,6 +397,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (!keyboardInCanvas(event)) return;
+  const command = event.ctrlKey || event.metaKey;
   if (event.key === 'Escape') {
     releaseGesture(true);
     space = false;
@@ -200,17 +408,19 @@ window.addEventListener('keydown', (event) => {
     space = false;
     updateCursor();
     palette.open(viewport.width / 2, viewport.height / 2);
-  } else if (event.code === 'Space' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+  } else if (event.code === 'Space' && !command && !event.altKey) {
     event.preventDefault();
     space = true;
     updateCursor();
-  } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+  } else if (command && !event.shiftKey && event.key.toLowerCase() === 'z') {
     event.preventDefault();
-    if (gesture) releaseGesture(true);
-    else {
-      localDrafts.pop();
-      renderer.invalidate();
-    }
+    undo();
+  } else if (command && !event.altKey && (event.key === '=' || event.key === '+' || event.key === '-' || event.key === '0')) {
+    // Canvas zoom instead of browser page zoom while the canvas has focus.
+    event.preventDefault();
+    const center: Point = [viewport.width / 2, viewport.height / 2];
+    const zoom = event.key === '0' ? 1 : zoomOf(camera) * (event.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP);
+    setCamera(zoomAt(camera, zoom, center, viewport));
   }
 });
 window.addEventListener('keyup', (event) => {
@@ -222,6 +432,7 @@ window.addEventListener('keyup', (event) => {
 
 function suspend(): void {
   releaseGesture(true);
+  touches.clear();
   space = false;
   palette.close(false);
   updateCursor();
@@ -229,11 +440,17 @@ function suspend(): void {
 }
 window.addEventListener('blur', suspend);
 window.addEventListener('pagehide', suspend);
-document.addEventListener('visibilitychange', () => { if (document.hidden) suspend(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) suspend();
+  else world.wake();
+});
+window.addEventListener('online', () => world.wake());
+window.addEventListener('pageshow', () => world.wake());
 
 function resize(): void {
   viewport = { width: window.innerWidth, height: window.innerHeight };
   renderer.resize(viewport, window.devicePixelRatio || 1);
+  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport));
 }
 window.addEventListener('resize', () => {
   releaseGesture(true);
@@ -252,3 +469,4 @@ watchDpr();
 save(session, STORAGE_KEYS.camera, camera);
 resize();
 updateCursor();
+world.start(subscriptionBounds(camera, viewport));
