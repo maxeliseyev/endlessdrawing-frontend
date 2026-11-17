@@ -9,7 +9,7 @@ import { Palette, toolCursor } from './palette';
 import { createHitContext, hitTest } from './renderer';
 import { createSceneRenderer, type SceneRenderer } from './scene-renderer';
 import {
-  browserStorage, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS,
+  browserStorage, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS, storedCamera,
 } from './storage';
 import { MAX_UNDO, SharedWorld, type Notice } from './world';
 
@@ -42,6 +42,9 @@ app.append(canvas);
 const local = browserStorage('localStorage');
 const session = browserStorage('sessionStorage');
 let preferences = loadPreferences(local);
+// A new tab session starts where the server suggests (near live drawing, see
+// `welcome`) unless the visitor moves first; a reload keeps its camera.
+let awaitingSpawn = storedCamera(session) === undefined;
 let camera = loadCamera(session);
 let viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
 let gesture: Gesture | undefined;
@@ -60,6 +63,15 @@ const world = new SharedWorld({
   undo: { load: () => loadUndo(session, MAX_UNDO), save: (ids) => { save(session, STORAGE_KEYS.undo, ids); } },
   changed: () => renderer.invalidate(),
   notice: (notice) => notify(noticeText(notice), notice),
+  welcome: (spawn) => {
+    if (!awaitingSpawn) return;
+    awaitingSpawn = false;
+    if (!spawn) return;
+    camera = { x: spawn[0], y: spawn[1], zoom: zoomOf(camera) };
+    cameraDirty = true;
+    renderer.invalidate();
+    world.setBounds(subscriptionBounds(camera, viewport));
+  },
 });
 
 // Rendering backend (Canvas 2D with a tile cache today, WebGL later) behind
@@ -139,6 +151,8 @@ function track(previous: Camera, next: Camera): void {
 }
 
 function setCamera(next: Camera): void {
+  // The visitor navigated before the entry hint arrived: keep their place.
+  awaitingSpawn = false;
   track(camera, next);
   camera = next;
   cameraDirty = true;

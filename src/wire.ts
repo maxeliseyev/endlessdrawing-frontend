@@ -30,3 +30,11 @@ export function parseStroke(value: unknown): Stroke {
   return { id: uuid(v.id), seq: v.seq as number, own: v.own, points,
     brush: v.brush, width: v.width, color: v.color.toUpperCase(), opacity: v.opacity };
 }
+
+// Optional hello.ack entry hint for a new session: a world point.
+export function parseSpawn(value: unknown): Point {
+  const v = object(value);
+  const point = [v.x, v.y];
+  if (!isPoint(point)) throw new ProtocolError();
+  return [point[0], point[1]];
+}

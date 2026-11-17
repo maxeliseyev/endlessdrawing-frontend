@@ -1,7 +1,7 @@
 import type { Bounds } from './camera';
-import { newId, type StrokeDraft } from './model';
+import { newId, type Point, type StrokeDraft } from './model';
 import { SharedScene } from './scene';
-import { object, parseStroke, ProtocolError, uuid } from './wire';
+import { object, parseSpawn, parseStroke, ProtocolError, uuid } from './wire';
 
 export type Notice = 'offline' | 'rejected' | 'deleteFailed' | 'pendingLimit' | 'dense' | 'protocol';
 
@@ -24,6 +24,12 @@ export interface WorldOptions {
   undo: UndoStore;
   changed: () => void;
   notice: (notice: Notice) => void;
+  /**
+   * After every hello.ack, before the first subscription of that connection:
+   * the server's optional entry hint for a new session (undefined when the
+   * world is empty or the server does not send one). Advisory only.
+   */
+  welcome?: (spawn: Point | undefined) => void;
   createSocket?: (url: string) => WebSocket;
   url?: string;
 }
@@ -201,9 +207,12 @@ export class SharedWorld {
   private receive(message: Record<string, unknown>): void {
     if (!this.ready) {
       if (message.type !== 'hello.ack' || message.protocol_version !== 1) throw new ProtocolError();
+      const spawn = message.spawn === undefined ? undefined : parseSpawn(message.spawn);
       this.ready = true;
       this.retry = 0;
       clearTimeout(this.timers.deadline);
+      // May move the camera and call setBounds: the subscription below uses it.
+      this.options.welcome?.(spawn);
       this.subscribe();
       this.flush();
       return;

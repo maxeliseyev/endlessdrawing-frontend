@@ -41,6 +41,11 @@ export function loadPreferences(storage: StoragePort | undefined): Preferences {
 }
 
 export function loadCamera(storage: StoragePort | undefined, random = Math.random): Camera {
+  return storedCamera(storage) ?? { x: random() * 500 - 250, y: random() * 500 - 250, zoom: 1 };
+}
+
+/** The camera of this tab session, if any (undefined: a new session). */
+export function storedCamera(storage: StoragePort | undefined): Camera | undefined {
   const value = load(storage, STORAGE_KEYS.camera);
   if (value && typeof value === 'object' && 'x' in value && 'y' in value &&
       typeof value.x === 'number' && typeof value.y === 'number' &&
@@ -49,7 +54,7 @@ export function loadCamera(storage: StoragePort | undefined, random = Math.rando
     const zoom = 'zoom' in value && typeof value.zoom === 'number' ? clampZoom(value.zoom) : 1;
     return { x: value.x, y: value.y, zoom };
   }
-  return { x: random() * 500 - 250, y: random() * 500 - 250, zoom: 1 };
+  return undefined;
 }
 
 const SECRET = /^[A-Za-z0-9_-]{43}$/;

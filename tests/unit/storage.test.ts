@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PREFERENCES } from '../../src/model';
-import { base64url, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS, type StoragePort } from '../../src/storage';
+import { base64url, loadCamera, storedCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS, type StoragePort } from '../../src/storage';
 
 function memory(): StoragePort {
   const items = new Map<string, string>();
@@ -58,6 +58,13 @@ describe('versioned browser storage', () => {
     expect(loadCamera(denied, () => 0.5)).toEqual({ x: 0, y: 0, zoom: 1 });
     expect(save(denied, 'key', {})).toBe(false);
     expect(save(undefined, 'key', {})).toBe(false);
+  });
+
+  it('tells a new tab session from a restored one', () => {
+    const storage = memory();
+    expect(storedCamera(storage)).toBeUndefined();
+    save(storage, STORAGE_KEYS.camera, { x: 1, y: 2, zoom: 1 });
+    expect(storedCamera(storage)).toEqual({ x: 1, y: 2, zoom: 1 });
   });
 
   it('restores and clamps camera zoom; missing zoom stays 1 for old sessions', () => {

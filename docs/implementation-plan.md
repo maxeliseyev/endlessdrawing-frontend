@@ -54,6 +54,9 @@
 - [x] Сессионный undo (sessionStorage) независимо от кеша, только подтверждённые; undo pending — до/после ack; ластик только own, максимальный seq.
 - [x] Reconnect с backoff, новый hello/snapshot, resync, повтор идентичного create без дублей.
 
+- [x] Точка входа новой сессии из `hello.ack.spawn` (случайный живой штрих ± 400 world units, backend `src/spawn.rs`): по мере расползания рисунка посетители стартуют всё дальше от центра.
+- [ ] Бэклог: сохранить выделенную область в SVG — [export-svg-backlog.md](export-svg-backlog.md).
+
 ### C. Backend и совместная приёмка
 
 - [x] Реальный `/ws`, раздача `dist/` backend-ом, origins по умолчанию для 5173/3000.

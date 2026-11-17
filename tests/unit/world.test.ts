@@ -197,6 +197,32 @@ describe('SharedWorld transport', () => {
     expect(notices).toEqual(['rejected']);
   });
 
+  it('applies the optional entry hint before the first subscription; rejects a malformed one', () => {
+    FakeSocket.instances.length = 0;
+    const hints: unknown[] = [];
+    let area = bounds;
+    const world = new SharedWorld({
+      secret: 'A'.repeat(43), url: 'ws://test/ws',
+      undo: { load: () => [], save: () => {} }, changed: () => {}, notice: () => {},
+      welcome: (spawn) => { hints.push(spawn); area = { min_x: 4900, min_y: 6900, max_x: 5100, max_y: 7100 }; world.setBounds(area); },
+      createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
+    });
+    world.start(bounds);
+    const s = FakeSocket.instances.at(-1)!;
+    s.open();
+    s.receive({ type: 'hello.ack', protocol_version: 1, spawn: { x: 5000, y: 7000 } });
+    expect(hints).toEqual([[5000, 7000]]);
+    expect(s.of('viewport.subscribe')).toHaveLength(1);
+    expect(s.last('viewport.subscribe')).toMatchObject({ bounds: area });
+    // Old servers and empty worlds: no field, no hint.
+    const { world: plain, socket } = setup();
+    void plain;
+    const other = socket();
+    other.open();
+    other.receive({ type: 'hello.ack', protocol_version: 1, spawn: { x: 'far', y: 0 } });
+    expect(other.readyState).toBe(3);
+  });
+
   it('resync_required discards staging and subscribes again with a new id', () => {
     const { socket } = setup();
     const s = socket(); const sub = s.ready();

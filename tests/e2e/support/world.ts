@@ -13,6 +13,10 @@ export interface MockWorld {
   messages: Record<string, unknown>[];
   // Test controls.
   holdAcks: boolean;
+  // Entry hint sent in hello.ack (none when undefined).
+  spawn: { x: number; y: number } | undefined;
+  // Delay of hello.ack in ms (simulates a slow connection).
+  helloDelay: number;
   held: (() => void)[];
   dropSockets(): void;
   releaseAcks(): void;
@@ -22,7 +26,7 @@ export interface MockWorld {
 export function createMockWorld(): MockWorld {
   let seq = 0;
   const world: MockWorld = {
-    strokes: new Map(), clients: new Set(), messages: [], holdAcks: false, held: [],
+    strokes: new Map(), clients: new Set(), messages: [], holdAcks: false, held: [], spawn: undefined, helloDelay: 0,
     dropSockets() { for (const client of [...this.clients]) { this.clients.delete(client); void client.route.close({ code: 1012 }); } },
     releaseAcks() { const held = this.held.splice(0); for (const send of held) send(); },
     seed(stroke, owner = 'someone-else') { this.strokes.set(stroke.id, { ...stroke, seq: ++seq, owner, deleted: false }); },
@@ -41,7 +45,8 @@ export function createMockWorld(): MockWorld {
       world.messages.push(message);
       if (message.type === 'hello') {
         client.secret = String(message.session_secret);
-        send(client, { type: 'hello.ack', protocol_version: 1 });
+        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 1, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 1 };
+        if (world.helloDelay) setTimeout(() => send(client, ack), world.helloDelay); else send(client, ack);
       } else if (message.type === 'viewport.subscribe') {
         const id = String(message.subscription_id);
         client.subscription = id;
