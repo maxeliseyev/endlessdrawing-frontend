@@ -106,6 +106,33 @@ test('long press opens the palette at the finger and discards the initial dot', 
   expect(creates()).toBe(0);
 });
 
+test('a finger lifted over the just-opened palette is forgotten: long press works again (e.g. with Hand)', async ({ page }) => {
+  await pointer(page, 'pointerdown', 1, 300, 300);
+  await page.waitForTimeout(700);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  // Capture was released when the palette opened, so the lift lands on the palette.
+  await dialog.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 300, button: 0, buttons: 0, bubbles: true });
+  await dialog.getByRole('button', { name: 'Hand', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await pointer(page, 'pointerdown', 2, 400, 300);
+  await page.waitForTimeout(700);
+  await expect(dialog).toBeVisible();
+  await pointer(page, 'pointerup', 2, 400, 300);
+});
+
+test('a new first touch clears a finger whose lift was never delivered', async ({ page }) => {
+  await pointer(page, 'pointerdown', 5, 300, 300);
+  await pointer(page, 'pointermove', 5, 340, 300);
+  // No pointerup for 5 at all; the next sequence starts with a primary touch.
+  await page.locator('canvas').dispatchEvent('pointerdown', { pointerId: 6, pointerType: 'touch', isPrimary: true,
+    clientX: 500, clientY: 400, button: 0, buttons: 1, bubbles: true, cancelable: true });
+  await page.waitForTimeout(700);
+  await expect(page.getByRole('dialog')).toBeVisible(); // a single touch, not a pinch
+  expect((await cam(page)).zoom).toBe(1);
+  expect(creates()).toBe(0); // the stale finger's unfinished stroke was discarded
+});
+
 test('movement beyond the slop cancels the long press and keeps drawing', async ({ page }) => {
   await pointer(page, 'pointerdown', 1, 300, 300);
   await pointer(page, 'pointermove', 1, 330, 300);

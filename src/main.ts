@@ -248,7 +248,19 @@ canvas.addEventListener('pointerdown', (event) => {
   const touch = event.pointerType === 'touch';
   if (!touch && event.button !== 0 && event.button !== 1) return;
   event.preventDefault();
-  if (touch) touches.set(event.pointerId, localPoint(event));
+  if (touch) {
+    // The first finger of a new touch sequence: no other finger can still be
+    // down, so drop any touch whose lift we never saw (self-healing only; the
+    // multi-touch model itself does not rely on isPrimary).
+    if (event.isPrimary && touches.size) {
+      touches.clear();
+      if (gesture?.kind === 'pinch' || gesture?.kind === 'blocked') gesture = undefined;
+      // An unfinished finger stroke of a vanished finger is discarded, never sent.
+      // isPrimary is per pointer type, so a pen stroke in progress is kept.
+      else if (gesture && gesture.type === 'touch') releaseGesture(true);
+    }
+    touches.set(event.pointerId, localPoint(event));
+  }
   if (palette.isOpen) {
     palette.close(!touch);
     if (touch) gesture ??= { kind: 'blocked' };
@@ -342,6 +354,16 @@ function cancelPointer(event: PointerEvent): void {
   if (gesturePointer(gesture) === event.pointerId) releaseGesture(true);
 }
 canvas.addEventListener('pointercancel', cancelPointer);
+// After a long press the capture is released and the palette opens under the
+// finger, so its lift is delivered to the palette, not the canvas. Forget the
+// finger wherever it is lifted; otherwise it would count as still down and
+// turn the next single touch into a pinch (and break long press).
+function liftElsewhere(event: PointerEvent): void {
+  if (event.pointerType !== 'touch' || event.target === canvas || !touches.has(event.pointerId)) return;
+  if (!endTouch(event.pointerId) && gesturePointer(gesture) === event.pointerId) releaseGesture(true);
+}
+window.addEventListener('pointerup', liftElsewhere);
+window.addEventListener('pointercancel', liftElsewhere);
 // Re-entering the canvas must not jump by the distance travelled outside it.
 canvas.addEventListener('pointerleave', (event) => { if (event.pointerType !== 'touch') hover = undefined; });
 canvas.addEventListener('lostpointercapture', (event) => {
