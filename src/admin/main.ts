@@ -1,4 +1,5 @@
 import './style.css';
+import QRCode from 'qrcode';
 import { resolveLocale } from '../i18n';
 import { AdminApi, ApiError, uncertainOutcome } from './api';
 import { makeHideOperation, ProtocolError, validReason, type AdminSession, type HideOperation } from './contracts';
@@ -25,6 +26,15 @@ let session: AdminSession | undefined;
 let view: AdminView | undefined;
 let sessionTimer: ReturnType<typeof setTimeout> | undefined;
 let focusCheck = false;
+// Non-secret setup guidance lives only in RAM. Never retain password/token/assertions.
+let rememberedLogin = '';
+let enrollmentProgress: { login: string; registered: number; required: number } | undefined;
+let authRetryAt = 0;
+let authTimer: ReturnType<typeof setTimeout> | undefined;
+
+function rememberCooldown(error: unknown): void {
+  if (error instanceof ApiError && error.status === 429) authRetryAt = Math.max(authRetryAt, error.retryAt);
+}
 
 function status(message = '', error = false): void {
   notice.textContent = message; notice.hidden = !message;
@@ -37,7 +47,7 @@ function errorText(error: unknown): string {
 }
 function reset(): number {
   epoch++; lifetime.abort(); lifetime = new AbortController();
-  clearTimeout(sessionTimer); session = undefined;
+  clearTimeout(sessionTimer); clearTimeout(authTimer); session = undefined;
   view?.dispose(); view = undefined;
   content.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach((dialog) => dialog.close());
   content.querySelectorAll<HTMLInputElement>('input[type=password]').forEach((input) => { input.value = ''; });
@@ -73,22 +83,27 @@ async function bootstrap(): Promise<void> {
     if (current === epoch) enterWorld(value);
   } catch (error) {
     if (current !== epoch) return;
+    rememberCooldown(error);
     showAuth('login', error instanceof ApiError && error.status === 401 ? '' : errorText(error));
   }
 }
 
-function showAuth(mode: 'login' | 'enroll', message = ''): void {
+function showAuth(mode: 'login' | 'enroll' | 'totp', message = ''): void {
   const current = reset(); status(message);
   const card = document.createElement('section'); card.className = 'auth-card';
   card.innerHTML = `
-    <h1>${mode === 'login' ? t.loginTitle : t.enrollment}</h1>
-    <p class="hint">${mode === 'login' ? t.signInHint : t.enrollmentHint}</p>
+    <h1>${mode === 'enroll' ? t.enrollment : t.loginTitle}</h1>
+    <p class="hint">${mode === 'login' ? t.signInHint : mode === 'totp' ? t.totpLoginHint : t.enrollmentHint}</p>
+    ${mode === 'enroll' ? `<ol class="setup-steps"><li>${t.primaryStep}</li><li>${t.backupStep}</li><li>${t.loginStep}</li></ol>` : `<p class="hint">${t.firstTimeHint}</p>`}
+    <p class="setup-progress" hidden></p>
     <form method="post">
-      <label>${t.login}<input name="login" autocomplete="username" required maxlength="128" /></label>
+      <label>${t.login}<input name="login" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="moderator" required maxlength="128" /></label>
+      <p class="hint">${t.loginHelp}</p>
       <label>${t.password}<input name="password" type="password" autocomplete="current-password" required minlength="20" /></label>
       ${mode === 'enroll' ? `<label>${t.token}<input name="enrollment_token" type="password" autocomplete="off" required /></label>
-        <label>${t.keyLabel}<input name="label" autocomplete="off" required maxlength="128" /></label>` : ''}
-      <button type="submit">${mode === 'login' ? t.signIn : t.register}</button>
+        <label>${t.keyLabel}<input name="label" autocomplete="off" required maxlength="64" /></label>` : ''}
+      ${mode === 'totp' ? `<label>${t.code}<input name="code" type="password" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required /></label>` : ''}
+      <button type="submit">${mode === 'login' ? t.signIn : mode === 'totp' ? t.totpSignIn : t.register}</button>
     </form>
     <p class="hint">${t.httpsHint}</p>
   `;
@@ -97,28 +112,60 @@ function showAuth(mode: 'login' | 'enroll', message = ''): void {
   const login = required<HTMLInputElement>(form, '[name=login]');
   const password = required<HTMLInputElement>(form, '[name=password]');
   const submit = required<HTMLButtonElement>(form, '[type=submit]');
+  login.value = rememberedLogin;
+  if (mode === 'login') card.append(button(t.totpLogin, () => showAuth('totp')));
   card.append(button(mode === 'login' ? t.enrollment : t.back, () => showAuth(mode === 'login' ? 'enroll' : 'login')));
-  card.append(button(t.retry, () => { void bootstrap(); }));
+  const retry = button(t.retry, () => { void bootstrap(); }); card.append(retry);
+  const progress = required<HTMLParagraphElement>(card, '.setup-progress');
   let busy = false;
+  function updateControls(): void {
+    if (current !== epoch) return;
+    clearTimeout(authTimer);
+    const remaining = Math.max(0, authRetryAt - Date.now());
+    const unfinished = enrollmentProgress && enrollmentProgress.login === login.value.trim();
+    progress.hidden = !unfinished;
+    if (unfinished) progress.textContent = t.registered(enrollmentProgress!.registered, enrollmentProgress!.required);
+    submit.disabled = busy || remaining > 0 || (mode === 'login' && !!unfinished);
+    retry.disabled = busy || remaining > 0;
+    form.querySelectorAll<HTMLInputElement>('input').forEach((input) => { input.disabled = busy || remaining > 0; });
+    if (remaining > 0) {
+      const seconds = Math.ceil(remaining / 1000);
+      status(t.retryCountdown(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`), true);
+      authTimer = setTimeout(updateControls, Math.min(1000, remaining));
+    } else if (authRetryAt > 0) {
+      authRetryAt = 0; status(t.retryReady);
+    }
+  }
+  login.addEventListener('input', updateControls);
+  updateControls();
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    if (busy || current !== epoch) return;
+    if (busy || submit.disabled || current !== epoch) return;
     void (async () => {
-      busy = true; submit.disabled = true; status(t.working);
+      busy = true; updateControls(); status(t.working);
       const token = form.querySelector<HTMLInputElement>('[name=enrollment_token]');
       const label = form.querySelector<HTMLInputElement>('[name=label]');
+      const loginName = login.value.trim(); rememberedLogin = loginName;
+      const codeField = form.querySelector<HTMLInputElement>('[name=code]');
+      let code = codeField?.value ?? '';
       let secret = password.value;
       let enrollmentToken = token?.value ?? '';
-      password.value = ''; if (token) token.value = '';
+      password.value = ''; if (token) token.value = ''; if (codeField) codeField.value = '';
       let ceremonyTimer: ReturnType<typeof setTimeout> | undefined;
       try {
         if ([...secret].length < 20 || new TextEncoder().encode(secret).byteLength > 1024) throw new ApiError(400, 'invalid_request');
         const options = await api.loginOptions(lifetime.signal);
         if (current !== epoch) return;
         if (Date.parse(options.expires_at) <= Date.now()) throw new ProtocolError();
+        if (mode === 'totp') {
+          if (!/^[0-9]{6}$/.test(code)) throw new ApiError(400, 'invalid_request');
+          const value = await api.loginTotp(loginName, secret, code, options.csrf_token, lifetime.signal);
+          if (current === epoch) enterWorld(value);
+          return;
+        }
         const response = mode === 'login'
-          ? await api.login(login.value, secret, options.csrf_token, lifetime.signal)
-          : await api.enrollmentStart(login.value, secret, enrollmentToken, label?.value ?? '', options.csrf_token, lifetime.signal);
+          ? await api.login(loginName, secret, options.csrf_token, lifetime.signal)
+          : await api.enrollmentStart(loginName, secret, enrollmentToken, label?.value ?? '', options.csrf_token, lifetime.signal);
         secret = ''; enrollmentToken = '';
         if (current !== epoch) return;
         const remaining = Date.parse(response.expires_at) - Date.now();
@@ -138,18 +185,89 @@ function showAuth(mode: 'login' | 'enroll', message = ''): void {
             const credential = await register(response.webauthn, ceremony.signal);
             if (current !== epoch) return;
             const result = await api.enrollmentFinish(credential, options.csrf_token, lifetime.signal);
-            if (current === epoch) showAuth(result.complete ? 'login' : 'enroll',
-              result.complete ? t.enrollmentComplete : t.registered(result.registered_credentials, result.required_credentials));
+            if (current === epoch) {
+              enrollmentProgress = result.complete ? undefined : { login: loginName, registered: result.registered_credentials, required: result.required_credentials };
+              showAuth(result.complete ? 'login' : 'enroll',
+                result.complete ? t.enrollmentComplete : t.registered(result.registered_credentials, result.required_credentials));
+            }
           }
         } finally { lifetime.signal.removeEventListener('abort', abort); }
       } catch (error) {
-        if (current === epoch) status(errorText(error), true);
+        if (current === epoch) { rememberCooldown(error); status(errorText(error), true); }
       } finally {
-        secret = ''; enrollmentToken = ''; clearTimeout(ceremonyTimer);
-        if (current === epoch) { busy = false; submit.disabled = false; }
+        secret = ''; enrollmentToken = ''; code = ''; clearTimeout(ceremonyTimer);
+        if (current === epoch) { busy = false; updateControls(); }
       }
     })();
   });
+}
+
+async function totpSettings(current: number, value: AdminSession): Promise<void> {
+  if (content.querySelector('.totp-dialog')) return;
+  const dialog = document.createElement('dialog'); dialog.className = 'totp-dialog';
+  const heading = document.createElement('h2'); heading.textContent = t.totpSettings;
+  const body = document.createElement('div'); const info = document.createElement('p'); info.setAttribute('role', 'status');
+  dialog.append(heading, info, body); content.append(dialog);
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const clean = () => {
+    clearTimeout(expiry);
+    dialog.querySelectorAll<HTMLInputElement>('input').forEach((input) => { input.value = ''; });
+    dialog.querySelectorAll('canvas').forEach((canvas) => { canvas.width = 0; canvas.height = 0; });
+    dialog.close(); dialog.remove(); lifetime.signal.removeEventListener('abort', clean);
+  };
+  dialog.addEventListener('cancel', (event) => { event.preventDefault(); clean(); });
+  dialog.append(button(t.close, clean)); lifetime.signal.addEventListener('abort', clean, { once: true }); dialog.showModal();
+  const active = () => current === epoch && dialog.isConnected;
+  const fail = (error: unknown) => { if (active()) info.textContent = errorText(error); };
+  try {
+    const state = await api.totpStatus(lifetime.signal); if (!active()) return;
+    if (!state.available) { info.textContent = t.totpUnavailable; return; }
+    if (!state.fresh_passkey) {
+      info.textContent = t.totpFresh;
+      body.append(button(t.totpReauth, () => { clean(); showAuth('login', t.totpFresh); })); return;
+    }
+    if (state.enabled) {
+      info.textContent = t.totpEnabled;
+      body.append(button(t.totpDisable, () => {
+        body.replaceChildren(button(t.totpDisableConfirm, () => { void (async () => {
+          try { await api.totpDisable(value.csrf_token, lifetime.signal); if (active()) { clean(); status(t.totpDisabled); } }
+          catch (error) { fail(error); }
+        })(); }));
+      })); return;
+    }
+    body.append(button(t.totpEnable, () => { void (async () => {
+      body.querySelectorAll('button').forEach((control) => { control.disabled = true; });
+      try {
+        const setup = await api.totpStart(value.csrf_token, lifetime.signal); if (!active()) return;
+        const remaining = Date.parse(setup.expires_at) - Date.now();
+        if (remaining <= 0) { info.textContent = t.totpExpired; body.replaceChildren(); return; }
+        body.replaceChildren(); info.textContent = t.totpScan;
+        const canvas = document.createElement('canvas'); canvas.className = 'totp-qr'; canvas.setAttribute('aria-label', t.totpSettings);
+        const manual = document.createElement('label'); manual.textContent = t.totpManual;
+        const secret = document.createElement('input'); secret.type = 'password'; secret.readOnly = true; secret.autocomplete = 'off'; secret.value = setup.secret; manual.append(secret);
+        const form = document.createElement('form');
+        const label = document.createElement('label'); label.textContent = t.code;
+        const input = document.createElement('input'); input.name = 'totp_code'; input.type = 'password'; input.inputMode = 'numeric'; input.autocomplete = 'one-time-code'; input.pattern = '[0-9]{6}'; input.minLength = 6; input.maxLength = 6; input.required = true; label.append(input);
+        const submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = t.totpConfirm;
+        form.append(label, submit); body.append(canvas, manual, button(t.revealSetup, () => { secret.type = secret.type === 'password' ? 'text' : 'password'; }), form);
+        expiry = setTimeout(() => { if (active()) { body.querySelectorAll('input').forEach((field) => { field.value = ''; }); canvas.width = 0; canvas.height = 0; body.replaceChildren(); info.textContent = t.totpExpired; } }, remaining);
+        await QRCode.toCanvas(canvas, setup.otpauth_uri, { width: 240, margin: 2 });
+        if (!active()) { canvas.width = 0; canvas.height = 0; return; }
+        let busy = false;
+        form.addEventListener('submit', (event) => { event.preventDefault(); if (busy) return;
+          void (async () => {
+            busy = true; submit.disabled = true; let code = input.value; input.value = '';
+            try {
+              if (!/^[0-9]{6}$/.test(code)) throw new ApiError(400, 'invalid_request');
+              await api.totpConfirm(code, value.csrf_token, lifetime.signal);
+              if (active()) { clean(); status(t.totpEnabled); }
+            } catch (error) { fail(error); }
+            finally { code = ''; busy = false; submit.disabled = false; }
+          })();
+        });
+      } catch (error) { fail(error); }
+    })(); }));
+  } catch (error) { fail(error); }
 }
 
 async function refreshSession(current: number): Promise<void> {
@@ -205,6 +323,7 @@ function enterWorld(value: AdminSession): void {
   content.append(layout);
   required(layout, '.account').textContent = value.account.login;
   const toolbar = required<HTMLElement>(layout, '.toolbar');
+  toolbar.append(button(t.totpSettings, () => { void totpSettings(current, value); }));
   const worldStatus = required<HTMLElement>(layout, '.world-status');
   const selectionCount = required<HTMLElement>(layout, '.selection-count');
   const list = required<HTMLElement>(layout, '.selection-list');

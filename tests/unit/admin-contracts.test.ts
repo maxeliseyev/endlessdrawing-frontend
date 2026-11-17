@@ -8,7 +8,7 @@ const session = { authenticated: true, account: { id, login: '<moderator>' }, cs
 
 describe('admin contract validation', () => {
   it('accepts only a full validated session, never password-only mfa_required', () => {
-    expect(parseSession(session)).toEqual(session);
+    expect(parseSession(session)).toEqual({ ...session, auth_method: 'passkey_uv' });
     for (const input of [{ status: 'mfa_required' }, { ...session, authenticated: false }, { ...session, csrf_token: '' },
       { ...session, idle_expires_at: 'broken' }, { ...session, account: { id: '../secret', login: 'x' } }]) {
       expect(() => parseSession(input)).toThrow(ProtocolError);

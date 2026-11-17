@@ -14,6 +14,7 @@ export interface AdminSession {
   csrf_token: string;
   expires_at: string;
   idle_expires_at: string;
+  auth_method: 'passkey_uv' | 'totp';
 }
 export interface LoginOptions { csrf_token: string; expires_at: string; authenticator_policy: 'passkey_uv' }
 export interface Ceremony { webauthn: Record<string, unknown>; expires_at: string }
@@ -24,9 +25,9 @@ export interface HideResult { operation_id: string; hidden: string[]; already_hi
 export function parseSession(value: unknown): AdminSession {
   const v = object(value);
   const account = object(v.account);
-  if (v.authenticated !== true) throw new ProtocolError();
+  if (v.authenticated !== true || (v.auth_method !== undefined && v.auth_method !== 'passkey_uv' && v.auth_method !== 'totp')) throw new ProtocolError();
   return { authenticated: true, account: { id: uuid(account.id), login: text(account.login, 128) },
-    csrf_token: text(v.csrf_token), expires_at: timestamp(v.expires_at), idle_expires_at: timestamp(v.idle_expires_at) };
+    csrf_token: text(v.csrf_token), expires_at: timestamp(v.expires_at), idle_expires_at: timestamp(v.idle_expires_at), auth_method: v.auth_method === 'totp' ? 'totp' : 'passkey_uv' };
 }
 export function parseLoginOptions(value: unknown): LoginOptions {
   const v = object(value);
@@ -46,7 +47,7 @@ export function parseEnrollment(value: unknown): EnrollmentResult {
       typeof v.complete !== 'boolean') throw new ProtocolError();
   const registered = v.registered_credentials as number;
   const required = v.required_credentials as number;
-  if (registered < 1 || required !== 2 || registered > required || v.complete !== (registered === required)) throw new ProtocolError();
+  if (registered < 1 || (required !== 1 && required !== 2) || registered > 2 || v.complete !== (registered >= required)) throw new ProtocolError();
   return { registered_credentials: registered, required_credentials: required, complete: v.complete };
 }
 export function parseHideResult(value: unknown, expected: HideOperation): HideResult {
