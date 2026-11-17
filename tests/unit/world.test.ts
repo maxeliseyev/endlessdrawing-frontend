@@ -72,7 +72,9 @@ describe('SharedWorld transport', () => {
     const sub = s.last('viewport.subscribe').subscription_id;
     s.receive({ type: 'viewport.snapshot.begin', subscription_id: sub });
     s.receive({ type: 'viewport.snapshot.chunk', subscription_id: sub, strokes: [wire(B, 7, false), wire(A, 3, true)] });
-    expect(world.scene.strokes()).toEqual([]); // staged until end
+    // Drawn as soon as the chunk arrives; replacement of the cache waits for end.
+    expect(world.scene.strokes().map((x) => x.seq)).toEqual([3, 7]);
+    expect(world.scene.confirmed.size).toBe(0);
     s.receive({ type: 'viewport.snapshot.end', subscription_id: sub });
     expect(world.scene.strokes().map((x) => x.seq)).toEqual([3, 7]);
     // A late message of an older subscription is ignored.
@@ -237,6 +239,44 @@ describe('SharedScene', () => {
     scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's2', strokes: [wire(B, 2, false)] });
     scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's2' });
     expect(scene.strokes().map((s) => s.id)).toEqual([B]);
+  });
+
+  it('reports every change of the drawn set exactly once, including snapshot replacement', () => {
+    const scene = new SharedScene();
+    const log: string[] = [];
+    scene.listener = { added: (s) => log.push(`+${s.id.at(-1)}`), removed: (s) => log.push(`-${s.id.at(-1)}`) };
+    scene.subscribe('s1');
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's1' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's1', strokes: [wire(A, 1, true), wire(B, 2, false)] });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's1' });
+    expect(log.splice(0)).toEqual(['+a', '+b']);
+    // Pan: the new snapshot re-sends A, adds C and no longer contains B.
+    scene.subscribe('s2');
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's2' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's2', strokes: [wire(A, 1, true), wire(C, 3, false)] });
+    expect(log.splice(0)).toEqual(['+c']); // visible before end
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's2' });
+    expect(log.splice(0)).toEqual(['-b']);
+    scene.hide(A); scene.unhide(A); scene.hide(A); scene.remove(A);
+    expect(log.splice(0)).toEqual(['-a', '+a', '-a']);
+    scene.accept({ type: 'stroke.deleted', subscription_id: 's2', stroke_id: C, seq: 3 });
+    expect(log.splice(0)).toEqual(['-c']);
+  });
+
+  it('a cancelled snapshot keeps the strokes it already delivered until the next one ends', () => {
+    const scene = new SharedScene();
+    const log: string[] = [];
+    scene.listener = { added: (s) => log.push(`+${s.id.at(-1)}`), removed: (s) => log.push(`-${s.id.at(-1)}`) };
+    scene.subscribe('s1');
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's1' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's1', strokes: [wire(A, 1, false)] });
+    scene.subscribe('s2'); // the user kept panning
+    expect(scene.strokes().map((s) => s.id)).toEqual([A]);
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's2' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's2', strokes: [wire(A, 1, false)] });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's2' });
+    expect(log).toEqual(['+a']); // no flicker
+    expect(scene.confirmed.has(A)).toBe(true);
   });
 
   it('an own ack during staging survives the snapshot replacement', () => {

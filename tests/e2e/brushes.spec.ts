@@ -8,6 +8,22 @@ async function image(page: Page): Promise<string> {
   return page.locator('canvas').evaluate((c: HTMLCanvasElement) => c.toDataURL());
 }
 
+// [differing channels, largest per-channel difference] against an ImageData kept in the page.
+async function keep(page: Page): Promise<void> {
+  await page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
+    (window as unknown as { kept: Uint8ClampedArray }).kept = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  });
+}
+async function distance(page: Page): Promise<number[]> {
+  return page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
+    const a = (window as unknown as { kept: Uint8ClampedArray }).kept;
+    const b = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let max = 0, count = 0;
+    for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i]! - b[i]!); if (d) count++; max = Math.max(max, d); }
+    return [count, max];
+  });
+}
+
 async function ink(page: Page): Promise<{ count: number; first: { x: number; y: number } | null }> {
   return page.locator('canvas').evaluate((c: HTMLCanvasElement) => {
     const scale = c.width / c.clientWidth;
@@ -53,22 +69,31 @@ for (const locale of ['en-US', 'ru-RU']) {
         await expect.poll(async () => (await ink(page)).count).toBeGreaterThan(20);
         // New strokes get new UUIDs: a spray cloud may differ from the canceled one.
         const completedPreview = await image(page);
+        await keep(page);
         await page.mouse.up();
-        await expect.poll(() => image(page)).toBe(completedPreview);
+        // Confirmed (the ack puts its id on the undo stack) and now in the tile cache.
+        await expect.poll(() => page.evaluate(() => (JSON.parse(sessionStorage.getItem('endless-drawing.undo.v1') ?? '[]') as string[]).length)).toBe(1);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        // Same geometry as the preview.
+        // Tiles and the main canvas may use different rasterizers, so anti-aliased
+        // edge pixels can differ a little; a real offset would differ by ~110 levels.
+        const [, max] = await distance(page);
+        expect(max).toBeLessThanOrEqual(48);
+        const committed = await image(page);
         if (brush === 'chisel') expect(completedPreview).toBe(preview);
         const selected = (await ink(page)).first!;
         await page.mouse.wheel(40, 20);
-        await expect.poll(() => image(page)).not.toBe(completedPreview);
+        await expect.poll(() => image(page)).not.toBe(committed);
         await page.mouse.wheel(-40, -20);
-        await expect.poll(() => image(page)).toBe(completedPreview);
+        await expect.poll(() => image(page)).toBe(committed);
 
         await page.mouse.move(350, 400);
         await page.mouse.down();
         await page.mouse.move(450, 400, { steps: 8 });
         await page.mouse.up();
-        await expect.poll(() => image(page)).not.toBe(completedPreview);
+        await expect.poll(() => image(page)).not.toBe(committed);
         await page.keyboard.press('ControlOrMeta+z');
-        await expect.poll(() => image(page)).toBe(completedPreview);
+        await expect.poll(() => image(page)).toBe(committed);
         await page.mouse.click(600, 350, { button: 'right' });
         await page.getByRole('button', { name: ru ? 'Ластик' : 'Eraser', exact: true }).click();
         await page.mouse.click(selected.x, selected.y);

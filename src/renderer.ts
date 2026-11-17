@@ -55,6 +55,27 @@ function pathFor(stroke: Drawable, camera: Camera, viewport: Viewport): Path2D {
   return path;
 }
 
+// Centerline relative to the first point, in world units. Completed points
+// are frozen, so the Path2D is built once and reused by every tile and frame;
+// a live preview only appends/decimates, which the count/last check catches.
+interface CachedLine { count: number; last: Point | undefined; path: Path2D }
+const lines = new WeakMap<readonly Point[], CachedLine>();
+
+function linePath(points: readonly Point[]): Path2D {
+  const last = points.at(-1);
+  const cached = lines.get(points);
+  if (cached && cached.count === points.length && cached.last === last) return cached.path;
+  const path = new Path2D();
+  const first = points[0]!;
+  path.moveTo(0, 0);
+  for (let index = 1; index < points.length; index++) {
+    const point = points[index]!;
+    path.lineTo(point[0] - first[0], point[1] - first[1]);
+  }
+  lines.set(points, { count: points.length, last, path });
+  return path;
+}
+
 // Screen-space line style: width scales with zoom, tolerance stays in CSS px.
 function setLineStyle(context: CanvasRenderingContext2D, stroke: Drawable, zoom: number, tolerance = 0): void {
   context.lineWidth = stroke.width * zoom + tolerance * 2;
@@ -62,8 +83,13 @@ function setLineStyle(context: CanvasRenderingContext2D, stroke: Drawable, zoom:
   context.lineJoin = stroke.brush === 'round' ? 'round' : 'bevel';
 }
 
-export function drawStroke(
-  context: CanvasRenderingContext2D, stroke: Drawable, camera: Camera, viewport: Viewport,
+/**
+ * Draw with an explicit projection: target = (world - origin) * scale, in the
+ * context's current units. Geometry is relative to the stroke's first point,
+ * so float precision of huge world coordinates never reaches the Canvas path.
+ */
+export function drawProjected(
+  context: CanvasRenderingContext2D, stroke: Drawable, scale: number, originX: number, originY: number,
 ): void {
   const first = stroke.points[0];
   if (!first) return;
@@ -71,28 +97,30 @@ export function drawStroke(
   context.globalCompositeOperation = 'source-over';
   context.globalAlpha = stroke.opacity;
   context.fillStyle = context.strokeStyle = stroke.color;
-  const zoom = zoomOf(camera);
-  setLineStyle(context, stroke, zoom);
+  context.translate((first[0] - originX) * scale, (first[1] - originY) * scale);
+  context.scale(scale, scale);
+  setLineStyle(context, stroke, 1);
   if (stroke.brush === 'chisel' || stroke.brush === 'spray') {
-    const [x, y] = worldToScreen(first, camera, viewport);
-    // Effect geometry is relative to the first point, so float precision of
-    // huge world coordinates never reaches the Canvas path.
-    context.translate(x, y);
-    context.scale(zoom, zoom);
     // One union fill: overlap inside the nib/spray never reapplies opacity.
     context.fill(effectPath(stroke));
   } else if (stroke.points.length === 1) {
-    const [x, y] = worldToScreen(first, camera, viewport);
     const path = new Path2D();
-    const size = stroke.width * zoom;
-    if (stroke.brush === 'round') path.arc(x, y, size / 2, 0, Math.PI * 2);
-    else path.rect(x - size / 2, y - size / 2, size, size);
+    const size = stroke.width;
+    if (stroke.brush === 'round') path.arc(0, 0, size / 2, 0, Math.PI * 2);
+    else path.rect(-size / 2, -size / 2, size, size);
     context.fill(path);
   } else {
     // One stroke() operation composites the whole path once, including self-intersections.
-    context.stroke(pathFor(stroke, camera, viewport));
+    context.stroke(linePath(stroke.points));
   }
   context.restore();
+}
+
+export function drawStroke(
+  context: CanvasRenderingContext2D, stroke: Drawable, camera: Camera, viewport: Viewport,
+): void {
+  const zoom = zoomOf(camera);
+  drawProjected(context, stroke, zoom, camera.x - viewport.width / 2 / zoom, camera.y - viewport.height / 2 / zoom);
 }
 
 export function hitTest(
@@ -164,6 +192,8 @@ export class Renderer {
     if (!context) throw new Error('Canvas 2D is unavailable in this browser.');
     this.context = context;
   }
+
+  get pixelRatio(): number { return this.dpr; }
 
   resize(viewport: Viewport, dpr: number): void {
     this.dpr = dpr;

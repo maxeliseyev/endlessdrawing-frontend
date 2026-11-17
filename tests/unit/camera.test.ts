@@ -108,6 +108,26 @@ describe('limited zoom', () => {
     expect(zoomedIn).toEqual({ min_x: -450, max_x: 450, min_y: -300, max_y: 300 });
   });
 
+  it('shifts the prefetch ahead of the pan and resubscribes while loaded ground remains', () => {
+    const base = { x: 0, y: 0, zoom: 1 };
+    const ahead = subscriptionBounds(base, viewport, [1, 0]);
+    // Width stays 3× the view; 35% of the one-screen slack moves ahead.
+    expect(ahead).toEqual({ min_x: -1380, max_x: 2220, min_y: -1200, max_y: 1200 });
+    // A fresh biased subscription never re-triggers itself.
+    expect(needsResubscribe(ahead, base, viewport)).toBe(false);
+    // After 0.85 screens of travel, half a screen of loaded ground is still ahead.
+    expect(needsResubscribe(ahead, { ...base, x: 1000 }, viewport)).toBe(false);
+    expect(needsResubscribe(ahead, { ...base, x: 1030 }, viewport)).toBe(true);
+    // The same holds when the server span cap leaves less slack (deep zoom-out, wide screen).
+    for (const width of [3000, 3840, 6000]) {
+      const wide = { width, height: 1000 };
+      const out = { x: 0, y: 0, zoom: MIN_ZOOM };
+      for (const heading of [[1, 0], [-0.6, 0.8], [0, 0]] as const) {
+        expect(needsResubscribe(subscriptionBounds(out, wide, heading), out, wide)).toBe(false);
+      }
+    }
+  });
+
   it('resubscribes only when the view leaves the prefetched area or zooming in makes it wasteful', () => {
     const base = { x: 0, y: 0, zoom: 1 };
     const area = subscriptionBounds(base, viewport);
@@ -115,8 +135,8 @@ describe('limited zoom', () => {
     expect(needsResubscribe(area, base, viewport)).toBe(false);
     expect(needsResubscribe(area, { ...base, x: 300 }, viewport)).toBe(false);
     expect(needsResubscribe(area, { ...base, x: 1000 }, viewport)).toBe(true);
-    expect(needsResubscribe(area, { ...base, zoom: 0.5 }, viewport)).toBe(false);
-    expect(needsResubscribe(area, { ...base, zoom: 0.4 }, viewport)).toBe(true);
+    expect(needsResubscribe(area, { ...base, zoom: 0.8 }, viewport)).toBe(false);
+    expect(needsResubscribe(area, { ...base, zoom: 0.5 }, viewport)).toBe(true);
     expect(needsResubscribe(area, { ...base, zoom: 2.5 }, viewport)).toBe(true);
     expect(needsResubscribe(area, { ...base, zoom: 1.5 }, viewport)).toBe(false);
   });

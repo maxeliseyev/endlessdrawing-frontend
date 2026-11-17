@@ -96,11 +96,30 @@ function axis(center: number, span: number): [number, number] {
   return [min, max];
 }
 
-// Prefetch one screen in each direction (3× viewport), capped by the server span.
-export function subscriptionBounds(camera: Camera, viewport: Viewport): Bounds {
+// Prefetched world distance beyond each visible edge: one screen when the
+// server span allows it (subscription = 3× the visible area), less when the
+// span cap at deep zoom-out leaves less room.
+function slack(visible: number): number {
+  return Math.max(0, (Math.min(MAX_SUBSCRIPTION_SPAN, visible * 3) - visible) / 2);
+}
+
+// Share of the slack moved ahead of the view in the direction of travel, and
+// the share of it that must remain ahead before a new snapshot is requested.
+// LEAD < 1 - RESUBSCRIBE_AT, so a fresh subscription never re-triggers itself.
+export const PREFETCH_LEAD = 0.35;
+export const RESUBSCRIBE_AT = 0.5;
+
+/**
+ * Prefetch around the view, capped by the server span. `heading` is the unit
+ * direction of the current pan (or [0, 0]): the area is shifted that way so
+ * the next snapshot arrives before the view reaches unloaded ground.
+ */
+export function subscriptionBounds(camera: Camera, viewport: Viewport, heading: Point = [0, 0]): Bounds {
   const zoom = zoomOf(camera);
-  const [min_x, max_x] = axis(camera.x, Math.min(MAX_SUBSCRIPTION_SPAN, (viewport.width * 3) / zoom));
-  const [min_y, max_y] = axis(camera.y, Math.min(MAX_SUBSCRIPTION_SPAN, (viewport.height * 3) / zoom));
+  const vw = viewport.width / zoom;
+  const vh = viewport.height / zoom;
+  const [min_x, max_x] = axis(camera.x + heading[0] * PREFETCH_LEAD * slack(vw), Math.min(MAX_SUBSCRIPTION_SPAN, vw * 3));
+  const [min_y, max_y] = axis(camera.y + heading[1] * PREFETCH_LEAD * slack(vh), Math.min(MAX_SUBSCRIPTION_SPAN, vh * 3));
   return { min_x, min_y, max_x, max_y };
 }
 
@@ -108,13 +127,15 @@ export function intersects(a: Bounds, b: Bounds): boolean {
   return a.min_x <= b.max_x && a.max_x >= b.min_x && a.min_y <= b.max_y && a.max_y >= b.min_y;
 }
 
-// Resubscribe only when the visible area (plus a margin) leaves the prefetched
-// area, or after zooming in far enough that the old area is wastefully large.
+// Resubscribe once less than half of the prefetched slack remains beyond the
+// visible area on some side (so there is still loaded ground ahead while the
+// snapshot streams in), or after zooming in far enough that the old area is
+// wastefully large.
 export function needsResubscribe(subscribed: Bounds | undefined, camera: Camera, viewport: Viewport): boolean {
   if (!subscribed) return true;
   const visible = visibleBounds(camera, viewport);
-  const mx = (visible.max_x - visible.min_x) / 4;
-  const my = (visible.max_y - visible.min_y) / 4;
+  const mx = slack(visible.max_x - visible.min_x) * RESUBSCRIBE_AT;
+  const my = slack(visible.max_y - visible.min_y) * RESUBSCRIBE_AT;
   const inside = subscribed.min_x <= Math.max(-WORLD_LIMIT, visible.min_x - mx) &&
     subscribed.max_x >= Math.min(WORLD_LIMIT, visible.max_x + mx) &&
     subscribed.min_y <= Math.max(-WORLD_LIMIT, visible.min_y - my) &&

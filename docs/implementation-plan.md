@@ -47,8 +47,9 @@
 - [x] Transport (`src/world.ts`) + детерминированный WS-двойник для E2E (`tests/e2e/support/world.ts`) и unit-тесты с фейковым сокетом: hello, chunks, ack/error, create/delete, сбои, повторы, rate limit, ack timeout.
 - [x] Web Crypto 32-byte session secret, base64url, sessionStorage; hello без утечек (не в URL/логах/stroke).
 - [x] Preview / pending / confirmed разделены; подтверждения по request_id; dedup по UUID.
-- [x] Snapshot staging → атомарная замена на end; subscription_id; own ack во время staging не теряется.
-- [x] Ограниченный кеш (20k/1M) и prefetch 3× с гистерезисом, throttle подписок, cap 30000.
+- [x] Snapshot staging → атомарная замена на end; subscription_id; own ack во время staging не теряется. Chunks рисуются сразу, прерванный staging не мигает.
+- [x] Ограниченный кеш (20k/1M) и prefetch 3× со сдвигом по направлению pan и ранней переподпиской, throttle подписок, cap 30000.
+- [x] Растровый кеш тайлов (`src/tiles.ts`): бюджет на кадр, fallback растянутым масштабом, prefetch кольца, √2-уровни во время зума, инкрементальная дорисовка, LRU и прямой рендер при нехватке памяти. Бенчмарк mock (4000 перекрывающихся штрихов, 1280×800): pan Chromium p95 200 → 17 мс.
 - [x] Сессионный undo (sessionStorage) независимо от кеша, только подтверждённые; undo pending — до/после ack; ластик только own, максимальный seq.
 - [x] Reconnect с backoff, новый hello/snapshot, resync, повтор идентичного create без дублей.
 
@@ -57,7 +58,7 @@
 - [x] Реальный `/ws`, раздача `dist/` backend-ом, origins по умолчанию для 5173/3000.
 - [x] `npm run test:integration`: два независимых контекста против реального backend+PostgreSQL — создание, чужое удаление запрещено, reload/ownership, undo у всех, `chisel`/`spray`. Chromium + Firefox + WebKit.
 - [ ] Гонки snapshot/create/delete и disconnect до ack с реальным сервером (сейчас — unit/mock E2E; серверная сторона покрыта backend-тестами).
-- [ ] Визуальная сверка thick-stroke bounds на краю подписки в трёх движках, нагрузка плотных сцен (особенно spray при 25%).
+- [ ] Визуальная сверка thick-stroke bounds на краю подписки в трёх движках, нагрузка плотных сцен на реальных устройствах (особенно spray при 25%, память тайлов на iPhone/iPad). Повторная пересылка перекрывающейся области при каждой переподписке остаётся ограничением протокола v1 (нет инкрементальной подписки).
 - [ ] HTTPS/WSS стенд, production Origin.
 
 ### Z. Ограниченный зум — сделано (16.11.2026, решение владельца)

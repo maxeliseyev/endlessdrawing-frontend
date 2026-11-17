@@ -101,7 +101,7 @@ export class SharedWorld {
   erase(id: string): void {
     const pending = this.scene.pending.get(id);
     if (pending) { this.cancelPending(id); return; }
-    const stroke = this.scene.confirmed.get(id);
+    const stroke = this.scene.get(id);
     if (!stroke?.own || this.scene.hidden.has(id)) return;
     this.scene.hide(id);
     this.enqueue({ kind: 'delete', id, undo: false });
@@ -231,9 +231,11 @@ export class SharedWorld {
       const stroke = parseStroke(message.stroke);
       if (stroke.id !== flight.op.id || !stroke.own) throw new ProtocolError();
       const cancelled = this.scene.pending.get(stroke.id)?.cancelled ?? false;
+      // Hidden before it is confirmed: a cancelled stroke never flashes on screen.
+      if (cancelled) this.scene.hide(stroke.id);
       this.scene.confirm(stroke);
       this.pushUndo(stroke.id);
-      if (cancelled) { this.scene.hide(stroke.id); this.queue.push({ kind: 'delete', id: stroke.id, undo: true }); }
+      if (cancelled) this.queue.push({ kind: 'delete', id: stroke.id, undo: true });
     } else if (flight.op.kind === 'delete' && message.operation === 'stroke.delete') {
       if (uuid(message.stroke_id) !== flight.op.id) throw new ProtocolError();
       this.scene.remove(flight.op.id);
