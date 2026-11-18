@@ -1,6 +1,6 @@
 # Проект изменений транспорта и загрузки областей
 
-Статус на 18.11.2026: M1+M2 опубликованы, [CI и внешние HTTPS/WSS проверки](transport-release.md) успешны. Wire-контракт — в [backend MessagePack v2](../../endless-drawing-backend/docs/protocol-v2-msgpack.md) и [manifest v3](../../endless-drawing-backend/docs/protocol-v3-manifest.md). Владелец выбрал M3 следующим этапом: сначала browser baseline, затем приоритет видимой геометрии. M3 ещё не реализован; реальные iPhone/iPad и полный performance baseline нового транспорта остаются открытыми.
+Статус на 18.11.2026: M1+M2 опубликованы, [CI и внешние HTTPS/WSS проверки](transport-release.md) успешны. Wire-контракт — в [backend MessagePack v2](../../endless-drawing-backend/docs/protocol-v2-msgpack.md) и [manifest v3](../../endless-drawing-backend/docs/protocol-v3-manifest.md). Владелец выбрал M3 следующим этапом: сначала browser baseline, затем приоритет видимой геометрии. M3 реализован локально как MessagePack v4, [результаты](loading-performance.md); production M3 не обновлялся; реальные iPhone/iPad и полный performance baseline нового транспорта остаются открытыми.
 
 ## 1. Последовательность и границы
 
@@ -74,6 +74,8 @@ M1 можно проверить и откатить независимо от �
 
 ## 6. M3: сначала видимая область
 
+Реализован локально как [v4](protocol-v4-priority.md). Нормативные формы — только backend; [методика, границы и результаты проверки](loading-performance.md). Ниже — согласованный порядок и инварианты; публикация остаётся отдельным действием.
+
 Решение владельца 18.11.2026 после публикации M1+M2: следующий приоритет — M3. Цель — уменьшить ожидание рисунка на экране при первом входе и переходе в новую область. Повторная передача уже закешированных strokes устранена M2; полный первый snapshot пока включает и видимую область, и запас вокруг неё.
 
 ### Порядок работы
@@ -102,7 +104,7 @@ M1 можно проверить и откатить независимо от �
 
 ## 8. Первый пакет реализации
 
-M1+M2 прошли fixtures, codecs, dual-profile backend, public/read-only admin и browser integrations и опубликованы через release CI с парой SHA. Следующий пакет — baseline и wire-проект M3 по разделу 6; затем реализация и отдельная выкладка. Изменение renderer допускается только при выявленном измерениями узком месте, а не как обязательная часть M3.
+M1+M2 прошли fixtures, codecs, dual-profile backend, public/read-only admin и browser integrations и опубликованы через release CI с парой SHA. M3 baseline, wire-проект и реализация завершены локально по разделу 6; следующая операция — отдельная выкладка проверенной пары SHA. Изменение renderer допускается только при выявленном измерениями узком месте, а не как обязательная часть M3.
 
 ## 9. Выявленная при интеграции регрессия WebGL
 

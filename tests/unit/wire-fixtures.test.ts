@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { decodeMessagePack, encodeMessagePack } from '../../src/transport/msgpack';
 
-for (const version of ['ws-v2', 'ws-v3']) {
+for (const version of ['ws-v2', 'ws-v3', 'ws-v4']) {
   const directory = new URL(`../fixtures/${version}/`, import.meta.url);
   const corpus = JSON.parse(readFileSync(new URL('corpus.json', directory), 'utf8')) as { name: string; value: Record<string, unknown> }[];
   const hashes = JSON.parse(readFileSync(new URL('sha256.json', directory), 'utf8')) as Record<string, string>;

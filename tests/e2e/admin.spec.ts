@@ -98,7 +98,9 @@ test('selects foreign strokes, requires review/reason, cancels without a request
   expect(operation.body?.stroke_ids).toEqual([SECOND_ID, STROKE_ID].sort());
   expect(operation.body?.reason).toBe('Illegal material');
   expect(state.strokes.size).toBe(0);
-  expect(state.messages.every((m) => m.type === 'hello' || m.type === 'viewport.subscribe')).toBe(true);
+  // Resizing or refreshing may reuse the manifest; all WS operations stay read-only.
+  const readOnlyMessages = ['hello', 'viewport.subscribe', 'viewport.subscribe.cached', 'viewport.fetch'];
+  expect(state.messages.every((m) => readOnlyMessages.includes(String(m.type)))).toBe(true);
 });
 
 test('a possibly committed 503 is resolved by GET operation, not a false success or new UUID', async ({ page }) => {

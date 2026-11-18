@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="How Endless Drawing handles public drawings, anonymous ownership, local storage, and connection data." />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="canonical" href="https://endlessdrawing.com/privacy" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/info.css" />
+    <title>Privacy policy — Endless Drawing</title>
+  </head>
+  <body data-page="privacy">
+    <div class="page">
+      <header><a href="/">Endless Drawing</a></header>
+      <main>
+        <h1 data-copy="privacyHeading">Privacy policy</h1>
+        <p data-copy="updated" class="muted">Last updated: November 18, 2026</p>
+        <p data-copy="privacyIntro" class="intro">This policy covers the Endless Drawing iPad app and endlessdrawing.com. You can use the shared canvas without registering or providing your name or email address.</p>
+        <h2 data-copy="drawingsHeading">Drawings are public</h2>
+        <p data-copy="drawingsBody">When you draw, we receive and store your finished strokes: their points, position on the canvas, brush, color, width, and opacity, together with identifiers and creation times. We use this information to save and synchronize the shared canvas. Other participants can see these drawings. Anyone who can view the canvas may copy what they see, so please keep personal and confidential information out of your drawings.</p>
+        <h2 data-copy="ownershipHeading">Anonymous ownership</h2>
+        <p data-copy="ownershipBody">The app creates a random ownership key, stored in the Keychain on your iPad. The website keeps its key for the browser tab session. This key is sent to our server over an encrypted connection; the server stores a hash to recognize your strokes and authorize undo or deletion. It is not your Apple ID, name, or an advertising identifier. It links your drawing actions without requiring an account.</p>
+        <h2 data-copy="deviceHeading">Data on your device</h2>
+        <p data-copy="deviceBody">The iPad app stores your canvas position, queued drawing actions, and undo history locally so it can restore your view and retry actions after an interruption. The website uses browser storage for brush settings, canvas position, the ownership key, and undo history. These are functional settings, not advertising cookies. These information pages do not set cookies or use browser storage.</p>
+        <h2 data-copy="connectionHeading">Connection data</h2>
+        <p data-copy="connectionBody">Our servers and hosting providers process network information, including your IP address, to deliver the service. Technical and security records may be used to diagnose failures, prevent abuse, and keep the shared canvas available.</p>
+        <h2 data-copy="sharingHeading">How information is used and shared</h2>
+        <p data-copy="sharingBody">We use this information to operate, secure, and moderate Endless Drawing and respond to requests. We do not sell your data, show advertising, or use advertising trackers or third-party analytics SDKs in the app or on the website. Hosting and backup providers process service data on our behalf. Information may also be disclosed when required by law or necessary to address abuse or protect the service.</p>
+        <h2 data-copy="retentionHeading">Storage and deletion</h2>
+        <p data-copy="retentionBody">Public drawings are kept as part of the shared canvas until they are removed by their owner or through moderation. Undo and the available drawing tools let you remove your own strokes while your device or session still holds the ownership key. Removing a stroke from the visible canvas does not immediately erase retained database records, moderation records, or backups. We keep those records as needed to operate and secure the service, handle requests, and meet legal obligations; backups are rotated separately.</p>
+        <h2 data-copy="choicesHeading">Your choices</h2>
+        <p data-copy="choicesBody">You can stop sending drawing data by stopping drawing or closing the app or website. Clearing browser data or deleting the app does not remove drawings already on the server; a Keychain entry may also remain after app deletion. Losing your ownership key may prevent you from deleting earlier strokes yourself. For a privacy or removal request, contact us with the approximate canvas location, time, and a screenshot if possible. Never send your ownership key. Copies made by other people are outside our control.</p>
+        <h2 data-copy="testflightHeading">TestFlight</h2>
+        <p data-copy="testflightBody">If you test the app through TestFlight, Apple processes beta testing information and shares crash reports, usage information, and feedback with the developer under its own privacy terms.</p>
+        <p><a href="https://www.apple.com/legal/privacy/data/en/test-flight/" data-copy="testflightLink">Apple’s TestFlight privacy information</a></p>
+        <h2 data-copy="contactHeading">Contact</h2>
+        <p data-copy="operatorBody">Endless Drawing is developed and operated by Endless Drawing Labs.</p>
+        <p data-copy="privacyContactBody">For privacy questions or removal requests, email us. We use your email address and the information you send to respond to your request.</p>
+        <p><a href="mailto:hello@endlessdrawing.com">hello@endlessdrawing.com</a></p>
+        <h2 data-copy="changesHeading">Policy updates</h2>
+        <p data-copy="changesBody">We will publish changes on this page and update the date above.</p>
+      </main>
+      <footer>
+        <nav>
+          <a href="/about" data-copy="aboutLink">About</a>
+          <a href="/privacy" data-copy="privacyLink">Privacy policy</a>
+          <a href="/" data-copy="canvasLink">Open the canvas</a>
+        </nav>
+      </footer>
+    </div>
+    <script type="module" src="/src/info.ts"></script>
+  </body>
+</html>

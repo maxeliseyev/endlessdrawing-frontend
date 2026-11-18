@@ -78,7 +78,7 @@ test('shared world through the real backend: sync, ownership, undo, reload, new 
   await expect.poll(() => pixel(visitor, 350, 250), { timeout: 10_000 }).toEqual([32, 32, 32, 255]);
   await expect.poll(() => ws.some((f) => f.operation === 'stroke.create')).toBe(true);
 
-  if (ws.find((m) => m.type === 'hello.ack')?.protocol_version === 3) await test.step('M2 partial overlap and warm return do not resend cached geometry', async () => {
+  if (Number(ws.find((m) => m.type === 'hello.ack')?.protocol_version) >= 3) await test.step('M2 partial overlap and warm return do not resend cached geometry', async () => {
     const far = await open(browser, { x: camera.x + 1850, y: camera.y });
     await far.mouse.move(250, 250); await far.mouse.down();
     await far.mouse.move(450, 250, { steps: 10 }); await far.mouse.up();

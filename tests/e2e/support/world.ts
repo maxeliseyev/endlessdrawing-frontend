@@ -48,7 +48,7 @@ export function createMockWorld(): MockWorld {
       world.messages.push(message);
       if (message.type === 'hello') {
         client.secret = String(message.session_secret);
-        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 3, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 3 };
+        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 4, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 4 };
         if (world.helloDelay) setTimeout(() => send(client, ack), world.helloDelay); else send(client, ack);
       } else if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         const id = String(message.subscription_id);

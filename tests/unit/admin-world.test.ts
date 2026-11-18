@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReadOnlyWorld, type WorldStatus } from '../../src/admin/world';
-import { MANIFEST_PROTOCOL } from '../../src/transport/codec';
+import { MANIFEST_PROTOCOL, PRIORITY_PROTOCOL } from '../../src/transport/codec';
 import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
 
 const a = '00000000-0000-4000-8000-00000000000a';
@@ -29,6 +29,22 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('read-only admin manifest transport', () => {
+  it('passes the current clipped visible area on v4 cold loads and refresh', () => {
+    const socket = new Socket(); socket.protocol = PRIORITY_PROTOCOL;
+    const world = new ReadOnlyWorld(() => {}, () => socket as unknown as WebSocket);
+    world.start(bounds, { min_x: -10, min_y: -10, max_x: 10, max_y: 10 });
+    socket.onopen?.(); socket.receive('hello.ack', { protocol_version: 4 });
+    expect(socket.last().visible_bounds).toEqual({ min_x: -10, min_y: -10, max_x: 10, max_y: 10 });
+    const sid = socket.last().subscription_id;
+    socket.receive('viewport.snapshot.begin', { subscription_id: sid });
+    socket.receive('viewport.snapshot.end', { subscription_id: sid });
+    world.setBounds(bounds, { min_x: 0, min_y: 0, max_x: 200, max_y: 200 });
+    world.refresh(); vi.advanceTimersByTime(300);
+    expect(socket.last().type).toBe('viewport.subscribe.cached');
+    expect(socket.last().visible_bounds).toEqual({ min_x: 0, min_y: 0, max_x: 100, max_y: 100 });
+    world.stop();
+  });
+
   it('preserves the cache while loading and does not resurrect a locally acknowledged hide', () => {
     const socket = new Socket(); const statuses: WorldStatus[] = [];
     const world = new ReadOnlyWorld((status) => statuses.push(status), () => socket as unknown as WebSocket);

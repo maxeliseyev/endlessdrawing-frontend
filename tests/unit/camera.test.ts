@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backingSize, MAX_SUBSCRIPTION_SPAN, MAX_ZOOM, MIN_ZOOM, needsResubscribe, pan, panScreen, pinch, screenToWorld, subscriptionBounds, visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt } from '../../src/camera';
+import { backingSize, clipVisibleBounds, MAX_SUBSCRIPTION_SPAN, MAX_ZOOM, MIN_ZOOM, needsResubscribe, pan, panScreen, pinch, screenToWorld, subscriptionBounds, visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt } from '../../src/camera';
 import { WORLD_LIMIT } from '../../src/model';
 
 const viewport = { width: 1200, height: 800 };
@@ -141,5 +141,23 @@ describe('limited zoom', () => {
     expect(needsResubscribe(area, { ...base, zoom: 0.5 }, viewport)).toBe(true);
     expect(needsResubscribe(area, { ...base, zoom: 2.5 }, viewport)).toBe(true);
     expect(needsResubscribe(area, { ...base, zoom: 1.5 }, viewport)).toBe(false);
+  });
+});
+
+
+describe('visible priority area', () => {
+  it.each([1, 0.16, 4])('clips to subscription and world at zoom %s, including ultra-wide windows', (zoom) => {
+    for (const x of [0, -WORLD_LIMIT, WORLD_LIMIT]) {
+      const view = { width: 6000, height: 1200 };
+      const camera = { x, y: WORLD_LIMIT, zoom };
+      const subscription = subscriptionBounds(camera, view);
+      const clipped = clipVisibleBounds(subscription, visibleBounds(camera, view));
+      expect(clipped.min_x).toBeGreaterThanOrEqual(subscription.min_x);
+      expect(clipped.min_y).toBeGreaterThanOrEqual(subscription.min_y);
+      expect(clipped.max_x).toBeLessThanOrEqual(subscription.max_x);
+      expect(clipped.max_y).toBeLessThanOrEqual(subscription.max_y);
+      expect(clipped.max_x).toBeGreaterThan(clipped.min_x);
+      expect(clipped.max_y).toBeGreaterThan(clipped.min_y);
+    }
   });
 });

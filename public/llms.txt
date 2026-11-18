@@ -7,3 +7,10 @@ A shared infinite white canvas at https://endlessdrawing.com. Open the page and 
 The public page is the canvas itself. There is no separate landing page. Tools open on request. English by default; Russian when the browser prefers ru. The drawing is saved on the server and seen live by everyone on the same canvas.
 
 The private administration area is not part of the public site and is excluded from the sitemap.
+
+## iPad app
+
+- [About](https://endlessdrawing.com/about): Endless Drawing for iPad, Apple Pencil, navigation, and drawing tools.
+- [Privacy policy](https://endlessdrawing.com/privacy): public drawings, anonymous ownership, device storage, and data handling.
+
+These are separate information pages for the iPad app. The main page remains the shared canvas.

@@ -2,7 +2,7 @@ import './style.css';
 import { resolveLocale, translations } from './i18n';
 import {
   clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
-  wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
+  visibleBounds, wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
 } from './camera';
 import { appendPoint, fitsCreateMessage, newId, strokeExtent, type Point, type StrokeDraft } from './model';
 import { Palette, toolCursor } from './palette';
@@ -70,7 +70,7 @@ const world = new SharedWorld({
     camera = { x: spawn[0], y: spawn[1], zoom: zoomOf(camera) };
     cameraDirty = true;
     renderer.invalidate();
-    world.setBounds(subscriptionBounds(camera, viewport));
+    world.setBounds(subscriptionBounds(camera, viewport), visibleBounds(camera, viewport));
   },
 });
 
@@ -158,7 +158,7 @@ function setCamera(next: Camera): void {
   cameraDirty = true;
   palette.setZoom(zoomOf(camera));
   renderer.invalidate();
-  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport, heading));
+  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport, heading), visibleBounds(camera, viewport));
 }
 
 function localPoint(event: { clientX: number; clientY: number }): Point {
@@ -515,7 +515,7 @@ window.addEventListener('pageshow', () => world.wake());
 function resize(): void {
   viewport = { width: window.innerWidth, height: window.innerHeight };
   renderer.resize(viewport, window.devicePixelRatio || 1);
-  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport, heading));
+  if (needsResubscribe(world.area, camera, viewport)) world.setBounds(subscriptionBounds(camera, viewport, heading), visibleBounds(camera, viewport));
 }
 window.addEventListener('resize', () => {
   releaseGesture(true);
@@ -534,4 +534,4 @@ watchDpr();
 save(session, STORAGE_KEYS.camera, camera);
 resize();
 updateCursor();
-world.start(subscriptionBounds(camera, viewport));
+world.start(subscriptionBounds(camera, viewport), visibleBounds(camera, viewport));

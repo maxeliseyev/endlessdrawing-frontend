@@ -1,6 +1,6 @@
 import { ManifestLoader } from '../transport/manifest';
 import { socketCodec, WS_PROTOCOLS, type WireCodec } from '../transport/codec';
-import type { Bounds } from '../camera';
+import { clipVisibleBounds, type Bounds } from '../camera';
 import { ProtocolError } from './contracts';
 import { AdminScene, SceneLimitError } from './scene';
 import { toBase64url } from './webauthn';
@@ -24,14 +24,15 @@ export class ReadOnlyWorld {
   private subscribeTimer: ReturnType<typeof setTimeout> | undefined;
   private deadline: ReturnType<typeof setTimeout> | undefined;
   private bounds: Bounds | undefined;
+  private visible: Bounds | undefined;
   private sentAt = 0;
   private readonly secret = toBase64url(crypto.getRandomValues(new Uint8Array(32)));
 
   constructor(private readonly changed: (status: WorldStatus) => void,
     private readonly createSocket = (url: string, protocols: string[]) => new WebSocket(url, protocols)) {}
 
-  start(bounds: Bounds): void {
-    this.bounds = bounds;
+  start(bounds: Bounds, visible: Bounds = bounds): void {
+    this.bounds = bounds; this.visible = clipVisibleBounds(bounds, visible);
     this.stopped = false;
     this.connect();
   }
@@ -47,7 +48,8 @@ export class ReadOnlyWorld {
   refresh(): void {
     if (!this.stopped) this.subscribe();
   }
-  setBounds(bounds: Bounds): void {
+  setBounds(bounds: Bounds, visible: Bounds = bounds): void {
+    this.visible = clipVisibleBounds(bounds, visible);
     if (this.bounds && this.bounds.min_x === bounds.min_x && this.bounds.min_y === bounds.min_y &&
         this.bounds.max_x === bounds.max_x && this.bounds.max_y === bounds.max_y) return;
     this.bounds = bounds;
@@ -88,7 +90,7 @@ export class ReadOnlyWorld {
         }
         if (message.type === 'error' && message.subscription_id === undefined) throw new ProtocolError();
         if (message.subscription_id === this.scene.subscriptionId && message.type === 'viewport.snapshot.fallback') {
-          if (this.codec.protocolVersion !== 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
+          if (this.codec.protocolVersion < 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
           if (message.reason === 'scene_limit') throw new SceneLimitError();
           this.reusable = false; this.manifest.start('', false); this.scene.subscribe('', true);
           clearTimeout(this.subscribeTimer); this.subscribeTimer = setTimeout(() => this.subscribe(), 1000);
@@ -133,10 +135,11 @@ export class ReadOnlyWorld {
     }
     clearTimeout(this.subscribeTimer);
     const subscription_id = crypto.randomUUID();
-    const cached = this.codec?.protocolVersion === 3 && this.reusable;
+    const cached = (this.codec?.protocolVersion ?? 1) >= 3 && this.reusable;
     this.manifest.start(subscription_id, cached);
-    this.scene.subscribe(subscription_id, this.codec?.protocolVersion === 3); this.sentAt = Date.now(); this.changed('loading');
-    this.socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds }));
+    this.scene.subscribe(subscription_id, (this.codec?.protocolVersion ?? 1) >= 3); this.sentAt = Date.now(); this.changed('loading');
+    this.socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds,
+      ...(this.codec?.protocolVersion === 4 ? { visible_bounds: this.visible } : {}) }));
     this.armDeadline(35_000);
   }
   private armDeadline(ms: number): void {

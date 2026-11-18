@@ -15,6 +15,14 @@
 - Escape / pointercancel / lost capture / blur / hidden / resize отменяют незаконченный жест. При отмене панорамирования возвращаем начальную камеру; wheel отменяет текущий жест перед панорамированием.
 - По решению владельца 18.11.2026 iPad с полным управлением — отдельное нативное приложение (свой репозиторий, Metal, двойное касание и сжатие Apple Pencil) на том же протоколе WS v1. В этом репозитории его не начинать и не добавлять жест корпуса карандаша в сайт. Веб-план ниже не меняется.
 
+### Информационные страницы iPad-приложения (решение 18.11.2026)
+
+- [x] `/about` — описание из предоставленного владельцем текста App Store Connect: Apple Pencil для рисования, пальцы для навигации, контекстная палитра, общий публичный холст без регистрации.
+- [x] `/privacy` — данные приложения и сайта, анонимный ключ владельца, локальные данные и очередь действий, публичность рисунков, серверное хранение/удаление, отдельные условия TestFlight. Без выдуманных сроков физического удаления.
+- [x] Отдельные Vite entries, белые текстовые страницы без изображений и трекеров, EN/RU через общий выбор языка, статический английский без JavaScript; sitemap/robots/llms обновлены. Ссылки на информационные страницы не добавляются поверх холста.
+- [ ] Публикация на endlessdrawing.com и проверка production URL; privacy-ссылка внутри нативного приложения — отдельная задача его репозитория.
+- [x] По данным владельца разработчик и оператор — Endless Drawing Labs, официальный email — hello@endlessdrawing.com. Контактные разделы `/about` и `/privacy` заполнены в EN/RU, email доступен через `mailto:` и без JavaScript.
+
 ## 2. Открыто перед интеграцией
 
 Ниже — вопросы интеграции. Часть уже конкретизирована в backend docs: реализованный профиль WS v1 и admin-api.md. Read-only admin-клиент использует эти формы; совместная приёмка с настоящим backend/HTTPS и публичное серверное рисование остаются отдельными gates.
@@ -32,7 +40,7 @@
 ### A. Основа и локальное взаимодействие — текущая итерация
 
 - [x] Бренд, принципы и SVG-референсы, AGENTS.md; favicon пользователя в `public/favicon.png`, оригинал в `docs/design/favicon-source.png`.
-- [x] Индексация без посадочной страницы: описание (фраза + общий холст без регистрации, EN и RU в одной строке), JSON-LD `WebSite`/`WebApplication`, `robots.txt` (закрыты `/admin`, `/api`, пробы), `sitemap.xml` только на `https://endlessdrawing.com/`, `llms.txt`. Код подтверждения поисковика не хранится.
+- [x] Индексация без посадочной страницы: описание (фраза + общий холст без регистрации, EN и RU в одной строке), JSON-LD `WebSite`/`WebApplication`, `robots.txt` (закрыты `/admin`, `/api`, пробы), `sitemap.xml` на `/`, `/about`, `/privacy` (информационные страницы добавлены 18.11.2026), `llms.txt`. Код подтверждения поисковика не хранится.
 - [x] Vite/strict TS, белый canvas без стартовых overlays.
 - [x] CSS/world координаты, случайная начальная камера ±250, sessionStorage, DPR/resize.
 - [x] Локальный preview, одиночный клик, round/square/chisel/spray, цвет/толщина/opacity, отмена жестов; формы доступны в EN/RU и восстанавливаются из Storage.
@@ -71,7 +79,7 @@
 
 ### M. MessagePack и загрузка областей — проектирование (18.11.2026)
 
-По поручению владельца начата новая спецификация. Документы: [WebSocket v2 / MessagePack](protocol-v2-msgpack.md), [архитектура и следующие этапы](transport-v2-design.md). M1 реализован локально: public/admin и backend поддерживают MessagePack v2 и JSON v1. Нормативный контракт перенесён в backend `docs/protocol-v2-msgpack.md`. M1+M2 опубликованы 18.11.2026; M2 реализован отдельным v3, M3 остаётся проектом.
+По поручению владельца начата новая спецификация. Документы: [WebSocket v2 / MessagePack](protocol-v2-msgpack.md), [архитектура и следующие этапы](transport-v2-design.md). M1 реализован локально: public/admin и backend поддерживают MessagePack v2 и JSON v1. Нормативный контракт перенесён в backend `docs/protocol-v2-msgpack.md`. M1+M2 опубликованы 18.11.2026; M2 реализован отдельным v3, M3 реализован локально в профиле v4; [замеры](loading-performance.md), публикация ещё не выполнена.
 
 - [x] Измерено чтением production без мутаций: 94 штриха / 21 430 точек — JSON 858 499 bytes, диагностический MessagePack 419 193 bytes. Повтор области и pan на 0.55 экрана заново передали все 94 штриха. Ни browser decode/paint, ни точная камера со скриншота этим не измерены.
 - [x] Проект M1: negotiation через WS subprotocol, именованные MessagePack maps, float64, явные строковые UUID, byte/structural limits, общая codec boundary public/admin, dual-profile rollout/rollback.
@@ -88,10 +96,11 @@
 - [x] Локальный real HTTPS admin gate: Chromium + native virtual UV WebAuthn + PostgreSQL, manifest-refresh без geometry, audited hide и refresh без возврата hidden stroke, TOTP и logout. Это не Touch ID/iPhone/iPad приёмка.
 - [x] Публикация: release CI [44320255728](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44320255728) successful, backend `3bdb988` / frontend `eb531f0`; внешний HTTPS, хеши assets и v3/v2/JSON проверены. Повтор одной области (34 штриха / 4757 точек): 1910 bytes control, 0 geometry вместо JSON 192317 bytes; [результат и rollback](transport-release.md).
 - [x] Владелец 18.11.2026 выбрал M3 следующим этапом после публикации мелкого спрея; [порядок работы и критерии](transport-v2-design.md#6-m3-сначала-видимая-область).
-- [ ] M3 baseline: фиксированные сцены и camera paths, первый видимый кадр/завершение видимой части, snapshot.end, decode/geometry/frame time/bytes и доступные измерения памяти; p50/p95, 16/100/400%, DPR 1/2 и ограниченная сеть.
-- [ ] M3 контракт/fixtures: hint видимой области, clipped к подписке и миру; согласовать negotiation в backend до реализации. Cold snapshot без дополнительного manifest RTT; warm — приоритет только missing geometry.
-- [ ] M3 реализация: один согласованный snapshot, видимое раньше запаса, seq-композиция, прежние cache identity/own ack/tombstones/end и лимиты.
-- [ ] M3 приёмка/публикация: сопоставить с baseline, реальные public/admin integrations и отдельная выкладка; физические Safari iPhone/iPad остаются самостоятельной проверкой.
+- [x] M3 baseline (контрольный dense corpus; peak/GPU memory и физические устройства отдельно): фиксированные сцены и camera paths, первый видимый кадр/завершение видимой части, snapshot.end, decode/geometry/frame time/bytes и доступные измерения памяти; p50/p95, 16/100/400%, DPR 1/2 и ограниченная сеть.
+- [x] M3 контракт/fixtures: hint видимой области, clipped к подписке и миру; normative backend v4 с fallback на v3/v2/JSON и общим Rust/TS корпусом. Cold snapshot без дополнительного manifest RTT; warm — приоритет только missing geometry.
+- [x] M3 реализация: один согласованный snapshot, видимое раньше запаса, seq-композиция, прежние cache identity/own ack/tombstones/end и лимиты.
+- [x] M3 локальная приёмка: 222 unit, 211 E2E / 2 CDP-only skips, 3 real public browsers, real HTTPS admin gate и полный PostgreSQL/WS suite. 90 групп расширенной матрицы v3/v4 совпали по scene/RGBA hashes, warm — 0 geometry. Контрольный Chromium cold p95: 1838.9 → 269.5 мс при том же объёме и одинаковых scene/raster hashes; [методика](loading-performance.md).
+- [ ] M3 публикация через CI с проверенной парой SHA и обновлённым серверным Compose (`WS_PRIORITY_ENABLED`). Физические Safari iPhone/iPad, peak памяти и production WAN остаются отдельной проверкой.
 
 ### Z. Ограниченный зум — сделано (16.11.2026, решение владельца)
 

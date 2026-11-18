@@ -1,4 +1,4 @@
-# Public canvas only. The administration area stays out of the index.
+# Public canvas and app information. The administration area stays out of the index.
 User-agent: *
 Disallow: /admin
 Disallow: /api

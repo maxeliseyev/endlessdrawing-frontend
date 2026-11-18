@@ -1,4 +1,4 @@
-import { JSON_PROTOCOL, MSGPACK_PROTOCOL, MANIFEST_PROTOCOL } from '../../src/transport/codec';
+import { JSON_PROTOCOL, MSGPACK_PROTOCOL, MANIFEST_PROTOCOL, PRIORITY_PROTOCOL } from '../../src/transport/codec';
 import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StrokeDraft } from '../../src/model';
@@ -66,6 +66,36 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('SharedWorld transport', () => {
+  it('sends clipped visible bounds only on v4 and composes reordered chunks by seq', () => {
+    const { world, socket, notices } = setup();
+    const s = socket(); s.protocol = PRIORITY_PROTOCOL;
+    world.setBounds(bounds, { min_x: -200, min_y: -10, max_x: 20, max_y: 200 });
+    s.open(); s.receive({ type: 'hello.ack', protocol_version: 4 });
+    expect(s.last('viewport.subscribe').visible_bounds).toEqual({ min_x: -100, min_y: -10, max_x: 20, max_y: 100 });
+    const sid = s.last('viewport.subscribe').subscription_id;
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: sid });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: sid, strokes: [wire(B, 2, false)] });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: sid, strokes: [wire(A, 1, false)] });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: sid });
+    expect(world.scene.strokes().map((s) => s.id)).toEqual([A, B]);
+    const cached = world.scene.get(B);
+    world.setBounds(bounds); vi.advanceTimersByTime(300);
+    const next = s.last('viewport.subscribe.cached').subscription_id;
+    expect(s.last('viewport.subscribe.cached').visible_bounds).toEqual(bounds);
+    const token = '00000000-0000-4000-8000-000000000001';
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: next });
+    s.receive({ type: 'viewport.manifest.begin', subscription_id: next, snapshot_token: token, stroke_count: 3, point_count: 6 });
+    s.receive({ type: 'viewport.manifest.chunk', subscription_id: next, snapshot_token: token, stroke_ids: [C, B, A] });
+    s.receive({ type: 'viewport.manifest.end', subscription_id: next, snapshot_token: token });
+    expect(s.last('viewport.fetch').stroke_ids).toEqual([C]);
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: next, strokes: [wire(C, 3, false)] });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: next });
+    expect(world.scene.get(B)).toBe(cached);
+    expect(world.scene.strokes().map((s) => s.id)).toEqual([A, B, C]);
+    expect(notices).toEqual([]);
+    world.stop();
+  });
+
   it('keeps cold/reconnect loads full and reuses geometry only on a live v3 connection', () => {
     const { world, socket, notices } = setup();
     const s = socket(); s.protocol = MANIFEST_PROTOCOL; s.open();

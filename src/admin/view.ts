@@ -1,4 +1,4 @@
-import { clampWorld, pan, panScreen, screenToWorld, subscriptionBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport } from '../camera';
+import { clampWorld, pan, panScreen, screenToWorld, subscriptionBounds, visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport } from '../camera';
 import type { Point, Stroke } from '../model';
 import { drawStroke, hitTest, Renderer } from '../renderer';
 import { ReadOnlyWorld, type WorldStatus } from './world';
@@ -42,7 +42,7 @@ export class AdminView {
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.watchDpr();
-    this.world.start(subscriptionBounds(this.camera, this.viewport));
+    this.world.start(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
   }
   get selection(): readonly string[] { return [...this.selected].sort(); }
   setMode(mode: 'select' | 'hand'): void { this.mode = mode; this.cursor(); }
@@ -55,7 +55,7 @@ export class AdminView {
     this.notify(); this.renderer.invalidate();
   }
   refresh(): void {
-    if (this.worldStatusStopped()) this.world.start(subscriptionBounds(this.camera, this.viewport));
+    if (this.worldStatusStopped()) this.world.start(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
     else this.world.refresh();
   }
   dispose(): void {
@@ -70,7 +70,7 @@ export class AdminView {
     const rect = this.canvas.getBoundingClientRect();
     this.viewport = { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
     this.renderer.resize(this.viewport, devicePixelRatio || 1);
-    this.world.setBounds(subscriptionBounds(this.camera, this.viewport));
+    this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
   }
   private readonly onDpr = () => { this.resize(); this.watchDpr(); };
   private watchDpr(): void {
@@ -106,7 +106,7 @@ export class AdminView {
   private applyCamera(next: Camera): void {
     this.camera = next;
     this.selected.clear(); this.notify(); this.renderer.invalidate();
-    this.world.setBounds(subscriptionBounds(this.camera, this.viewport));
+    this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
     this.onCamera?.(this.camera);
   }
   zoomIn(): void { this.zoomBy(1.25); }

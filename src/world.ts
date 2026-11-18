@@ -1,7 +1,7 @@
 import { ManifestLoader } from './transport/manifest';
 import { socketCodec, WS_PROTOCOLS, type WireCodec } from './transport/codec';
 import { CodecError } from './transport/msgpack';
-import type { Bounds } from './camera';
+import { clipVisibleBounds, type Bounds } from './camera';
 import { newId, type Point, type StrokeDraft } from './model';
 import { SharedScene } from './scene';
 import { parseSpawn, parseStroke, ProtocolError, uuid } from './wire';
@@ -45,6 +45,7 @@ export class SharedWorld {
   private stopped = true;
   private retry = 0;
   private bounds: Bounds | undefined;
+  private visible: Bounds | undefined;
   private subscribedBounds: Bounds | undefined;
   private subscribeSentAt = 0;
   private readonly queue: Op[] = [];
@@ -70,8 +71,8 @@ export class SharedWorld {
   get connected(): boolean { return this.ready; }
   get area(): Bounds | undefined { return this.subscribedBounds ?? this.bounds; }
 
-  start(bounds: Bounds): void {
-    this.bounds = bounds;
+  start(bounds: Bounds, visible: Bounds = bounds): void {
+    this.bounds = bounds; this.visible = clipVisibleBounds(bounds, visible);
     if (!this.stopped) return;
     this.stopped = false;
     this.connect();
@@ -97,8 +98,8 @@ export class SharedWorld {
     this.connect();
   }
 
-  setBounds(bounds: Bounds): void {
-    this.bounds = bounds;
+  setBounds(bounds: Bounds, visible: Bounds = bounds): void {
+    this.bounds = bounds; this.visible = clipVisibleBounds(bounds, visible);
     if (!this.ready) return;
     clearTimeout(this.timers.subscribe);
     // At most ~4 subscriptions/s; the server allows 5/s.
@@ -242,7 +243,7 @@ export class SharedWorld {
     if (message.type === 'error' && message.request_id !== undefined) { this.failed(message); return; }
     if (message.type === 'error' && message.subscription_id === undefined) throw new ProtocolError();
     if (message.subscription_id === this.scene.subscriptionId && message.type === 'viewport.snapshot.fallback') {
-      if (this.codec?.protocolVersion !== 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
+      if ((this.codec?.protocolVersion ?? 1) < 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
       if (message.reason === 'scene_limit') this.options.notice('dense');
       this.reusable = false; this.manifest.start('', false); this.scene.subscribe('');
       clearTimeout(this.timers.subscribe);
@@ -356,12 +357,13 @@ export class SharedWorld {
     if (!this.ready || !this.bounds || socket?.readyState !== WebSocket.OPEN) return;
     clearTimeout(this.timers.subscribe);
     const subscription_id = newId();
-    const cached = this.codec?.protocolVersion === 3 && this.reusable;
+    const cached = (this.codec?.protocolVersion ?? 1) >= 3 && this.reusable;
     this.manifest.start(subscription_id, cached);
-    this.scene.subscribe(subscription_id, this.codec?.protocolVersion === 3);
+    this.scene.subscribe(subscription_id, (this.codec?.protocolVersion ?? 1) >= 3);
     this.subscribeSentAt = Date.now();
     this.subscribedBounds = this.bounds;
-    socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds }));
+    socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds,
+      ...(this.codec?.protocolVersion === 4 ? { visible_bounds: this.visible } : {}) }));
     this.armDeadline(35_000);
   }
 

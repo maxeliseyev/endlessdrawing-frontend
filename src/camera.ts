@@ -167,3 +167,11 @@ export function backingSize(viewport: Viewport, dpr: number): Viewport {
     height: Math.max(1, Math.round(viewport.height * dpr)),
   };
 }
+
+/** Priority hint clipped to what this subscription can actually cover. */
+export function clipVisibleBounds(subscription: Bounds, visible: Bounds): Bounds {
+  const clipped = { min_x: Math.max(subscription.min_x, visible.min_x), min_y: Math.max(subscription.min_y, visible.min_y),
+    max_x: Math.min(subscription.max_x, visible.max_x), max_y: Math.min(subscription.max_y, visible.max_y) };
+  if (clipped.min_x >= clipped.max_x || clipped.min_y >= clipped.max_y) throw new RangeError('Visible area must intersect subscription');
+  return clipped;
+}
