@@ -1,0 +1,147 @@
+{
+  "schema": 1,
+  "date": "2026-11-18",
+  "baseline_revision": "e3b8f1f",
+  "corpus": {
+    "strokes": 240,
+    "points_per_stroke": 24,
+    "brushes": [
+      "round",
+      "square",
+      "chisel",
+      "spray"
+    ],
+    "viewport": [
+      1000,
+      700
+    ],
+    "zooms": [
+      1,
+      0.8,
+      0.6,
+      0.9
+    ],
+    "pan_frames": 60
+  },
+  "limits": [
+    "GPU draw submission counters, not GPU time or display FPS",
+    "Chromium DPR 2 includes outstanding tile-building work in initial post-zoom frames",
+    "RGBA hashes compared only within the same browser and DPR"
+  ],
+  "results": [
+    {
+      "browser": "chromium",
+      "dpr": 1,
+      "rgba_hash": "d30a7a7aa30722d5ba1320ce7280cb4eeaad065988a1c1457202b32d3f9a3ea2",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 24.0,
+        "min": 24,
+        "max": 24
+      },
+      "screen_copies_after": {
+        "p50": 4.0,
+        "min": 4,
+        "max": 4
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 0,
+      "offscreen_draws_in_60_post_zoom_frames_after": 0
+    },
+    {
+      "browser": "chromium",
+      "dpr": 2,
+      "rgba_hash": "ec47a47328803fdb3194bb95157ab9916c481a6754982269b3b28dc383e8ba7b",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 28.0,
+        "min": 28,
+        "max": 72
+      },
+      "screen_copies_after": {
+        "p50": 16.0,
+        "min": 16,
+        "max": 54
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 481,
+      "offscreen_draws_in_60_post_zoom_frames_after": 481
+    },
+    {
+      "browser": "firefox",
+      "dpr": 1,
+      "rgba_hash": "7dfea5b89611e322068c217459740c6ad84b5fbd90c5fb1449ddb800d75515ff",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 24.0,
+        "min": 24,
+        "max": 24
+      },
+      "screen_copies_after": {
+        "p50": 4.0,
+        "min": 4,
+        "max": 4
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 0,
+      "offscreen_draws_in_60_post_zoom_frames_after": 0
+    },
+    {
+      "browser": "firefox",
+      "dpr": 2,
+      "rgba_hash": "ff63db3cd26c048420b397ec2d5f334c21591640ed228637e6554d2fb030f500",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 28.0,
+        "min": 28,
+        "max": 28
+      },
+      "screen_copies_after": {
+        "p50": 16.0,
+        "min": 16,
+        "max": 16
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 0,
+      "offscreen_draws_in_60_post_zoom_frames_after": 0
+    },
+    {
+      "browser": "webkit",
+      "dpr": 1,
+      "rgba_hash": "ba43dd9a3cb91c597bbeae09494daeb8fa38eb0ab407ce466ec77f5c76f61709",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 24.0,
+        "min": 24,
+        "max": 24
+      },
+      "screen_copies_after": {
+        "p50": 4.0,
+        "min": 4,
+        "max": 4
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 0,
+      "offscreen_draws_in_60_post_zoom_frames_after": 0
+    },
+    {
+      "browser": "webkit",
+      "dpr": 2,
+      "rgba_hash": "fcb2e2b07fba37c636011f8566ba97cfdc2d1eafbb263fcf8934fc1d0f290d44",
+      "idle_frames_before": 0,
+      "idle_frames_after": 0,
+      "screen_copies_before": {
+        "p50": 28.0,
+        "min": 28,
+        "max": 28
+      },
+      "screen_copies_after": {
+        "p50": 16.0,
+        "min": 16,
+        "max": 16
+      },
+      "offscreen_draws_in_60_post_zoom_frames_before": 0,
+      "offscreen_draws_in_60_post_zoom_frames_after": 0
+    }
+  ]
+}

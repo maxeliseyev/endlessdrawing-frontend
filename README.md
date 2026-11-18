@@ -125,6 +125,7 @@ Vite собирает `dist/about/index.html` и `dist/privacy/index.html` с о
 
 ## Документы
 
+- [Проверка лишнего рендера и перекрытых штрихов](docs/rendering-audit.md); воспроизводимый локальный замер — `npm run bench:occlusion -- --help`.
 - [M3: приоритет видимой области](docs/protocol-v4-priority.md) — опубликован 18.11.2026; контракт, fallback и статус проверок.
 - [Измерения загрузки v3/v4 и воспроизводимый стенд](docs/loading-performance.md).
 

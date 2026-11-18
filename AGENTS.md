@@ -42,6 +42,7 @@ npx playwright install firefox webkit
 npm run test:e2e:all  # Chromium + Firefox + WebKit
 npm run test:integration  # реальный backend на :3000 со STATIC_DIR=dist
 # Воспроизводимые замеры loading: npm run bench:loading -- --help; docs/loading-performance.md
+# Проверка перекрытых штрихов: npm run bench:occlusion -- --help; docs/rendering-audit.md
 npm run dev:lan   # для iPhone/iPad в локальной сети (Origin добавить в ALLOWED_ORIGINS)
 ```
 

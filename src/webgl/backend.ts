@@ -485,7 +485,10 @@ export class WebGLSceneRenderer implements SceneRenderer {
       } else if (tile.adds.length) this.applyAdds(tile);
       return tile;
     };
-    const fallbacks = [...this.gpuTiles.values()]
+    // Older scales only cover holes while the requested tiles are being built.
+    // Once the view is ready, every fallback copy would be covered again.
+    const complete = plan.needed.every((coord) => this.gpuTiles.get(coord.key)?.dirty === false);
+    const fallbacks = complete ? [] : [...this.gpuTiles.values()]
       .filter((tile) => tile.scale !== plan.scale && !tile.dirty && intersects(tile.bounds, view))
       .sort((a, b) => Math.abs(Math.log(b.scale / plan.scale)) - Math.abs(Math.log(a.scale / plan.scale)));
     for (const tile of fallbacks) {

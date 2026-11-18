@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "hidden_strokes": 200,
+  "viewport": {
+    "width": 1000,
+    "height": 700
+  },
+  "results": [
+    {
+      "browser": "chromium",
+      "dpr": 1,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 0.19999998807907104,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "cd1197f9628f2b95c8b05f014e6364ba976e2e7ae2ca0cafa3f65e73f41fc231",
+        "frames": 2
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 2.2000000178813934,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "cd1197f9628f2b95c8b05f014e6364ba976e2e7ae2ca0cafa3f65e73f41fc231",
+        "frames": 3
+      },
+      "pixels_equal": true
+    },
+    {
+      "browser": "chromium",
+      "dpr": 2,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 0.30000001192092896,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "28e6af5a7005b1fd51216e3d9e5f753599576a3604804e1af2e4c269cebaffcf",
+        "frames": 3
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 1.300000011920929,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "28e6af5a7005b1fd51216e3d9e5f753599576a3604804e1af2e4c269cebaffcf",
+        "frames": 3
+      },
+      "pixels_equal": true
+    },
+    {
+      "browser": "firefox",
+      "dpr": 1,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 0,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "1817ef4ccf188fd3deac977fbc67319f91f722976256812c86545aae4e9d65d4",
+        "frames": 2
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 3,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "1817ef4ccf188fd3deac977fbc67319f91f722976256812c86545aae4e9d65d4",
+        "frames": 3
+      },
+      "pixels_equal": true
+    },
+    {
+      "browser": "firefox",
+      "dpr": 2,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 0,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "c9a4d401d8f1b57ba45c8717f71c70a5710a8561856dbbd8cd2f36eebb150883",
+        "frames": 3
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 3,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "c9a4d401d8f1b57ba45c8717f71c70a5710a8561856dbbd8cd2f36eebb150883",
+        "frames": 3
+      },
+      "pixels_equal": true
+    },
+    {
+      "browser": "webkit",
+      "dpr": 1,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 1,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "1817ef4ccf188fd3deac977fbc67319f91f722976256812c86545aae4e9d65d4",
+        "frames": 2
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 3,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "1817ef4ccf188fd3deac977fbc67319f91f722976256812c86545aae4e9d65d4",
+        "frames": 3
+      },
+      "pixels_equal": true
+    },
+    {
+      "browser": "webkit",
+      "dpr": 2,
+      "visible_only": {
+        "hidden_strokes": 0,
+        "cold_offscreen_draws": 8,
+        "static_buffer_uploads": 3,
+        "geometry_prepare_cpu_ms": 1,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "c9a4d401d8f1b57ba45c8717f71c70a5710a8561856dbbd8cd2f36eebb150883",
+        "frames": 2
+      },
+      "occluded": {
+        "hidden_strokes": 200,
+        "cold_offscreen_draws": 1608,
+        "static_buffer_uploads": 403,
+        "geometry_prepare_cpu_ms": 2,
+        "warm_offscreen_draws": 0,
+        "rgba_hash": "c9a4d401d8f1b57ba45c8717f71c70a5710a8561856dbbd8cd2f36eebb150883",
+        "frames": 4
+      },
+      "pixels_equal": true
+    }
+  ]
+}

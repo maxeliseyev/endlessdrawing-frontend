@@ -14,7 +14,8 @@
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:all": "playwright test",
     "test:integration": "playwright test --config playwright.integration.config.ts",
-    "bench:loading": "python3 scripts/bench-loading.py"
+    "bench:loading": "python3 scripts/bench-loading.py",
+    "bench:occlusion": "node scripts/bench-occlusion.mjs"
   },
   "engines": {
     "node": ">=22.12.0"
