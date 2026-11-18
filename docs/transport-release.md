@@ -39,3 +39,11 @@
 - Серверный Compose изменён только добавлением `WS_PRIORITY_ENABLED`, исходный SHA-256 проверен, прежняя версия сохранена в root-only backup; preflight успешен. Runtime credentials и правила доступа не менялись.
 - Внешний HTTPS: readiness ready, HTML `/`, `/about`, `/privacy`, `/admin/` и 8 JS/CSS assets совпали с локальной сборкой; robots/sitemap/llms совпали, admin session без cookie — 401. Live `/about` и `/privacy`: 18 проверок Chromium/Firefox/WebKit, EN/RU и без JavaScript прошли. Начальная навигация превысила стандартный WAN timeout 30s; повтор с принятым 120s budget успешен. Это не гарантия стабильной WAN latency.
 - Read-only WSS: v4/v3/v2/explicit JSON и legacy JSON приняты. В одной выборке 23 штриха / 1996 точек; cold binary 40993 bytes, JSON 82208 bytes. Две повторные v4 и v3 загрузки: по 1492 bytes manifest/control, 0 geometry chunks / 0 переданных точек. Штрихи не создавались и не удалялись. Это проверка транспорта, не замер production ускорения рендера или физическая iPad/Pencil приёмка.
+
+## Устранение лишних копирований WebGL, 18.11.2026
+
+[Actions 44371318656](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44371318656) завершился успешно: verify/build/deploy, real public/admin browser gates, image/backup/Caddy smoke. Frontend кода — `79d1846245d2f054851401404f595bf29832f88a`, backend — `85df206976cf10aefeeab7c812766459f6d7769b` (runtime-код тот же, что `5ac7ddf`). Active healthy image: `endlessdrawing-app:85df206976cf10aefeeab7c812766459f6d7769b-44371318656-1`; labels и работающий контейнер проверены.
+
+WebGL пропускает fallback прежних масштабов, когда все текущие видимые тайлы готовы. RGBA совпали; локально check/build, 222 unit, 217 E2E / 2 CDP-only skips. Новая регрессия проверяет idle, warm pan, отсутствие повторных STATIC_DRAW uploads и сохранение fallback при исчерпании бюджета. Внешние `/`, `/about`, `/privacy`, `/admin/`, 8 JS/CSS assets и metadata совпали с локальной сборкой; readyz ready, admin session без cookie — 401.
+
+Аудит полностью перекрытых штрихов воспроизводится `npm run bench:occlusion`: 200 закрытых штрихов дали 1608 вместо 8 offscreen draw calls при тех же пикселях. Исключение такой геометрии ещё не реализовано. [Измерения и границы выводов](rendering-audit.md); физический iPad/GPU time/FPS не измерялись.
