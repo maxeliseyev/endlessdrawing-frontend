@@ -1,6 +1,6 @@
 # WebSocket v4: приоритет видимой области
 
-M3 реализован локально 18.11.2026. Нормативный контракт находится только в backend: [protocol-v4-priority.md](../../endless-drawing-backend/docs/protocol-v4-priority.md). Public и read-only admin предпочитают MessagePack v4, затем v3/v2/JSON. Публикация M3 ещё не выполнена.
+M3 опубликован 18.11.2026. Нормативный контракт находится только в backend: [protocol-v4-priority.md](../../endless-drawing-backend/docs/protocol-v4-priority.md). Public и read-only admin предпочитают MessagePack v4, затем v3/v2/JSON. Релиз — [Actions 44364578357](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44364578357); [результаты и версии](transport-release.md).
 
 Клиент передаёт пересечение видимого окна с подпиской и миром. Сервер сначала отдаёт geometry, чьи bounds пересекают эту область, затем запас. Всё относится к одному согласованному snapshot; full загрузка не требует дополнительного manifest round trip, warm загрузка использует M2 и запрашивает только missing ids в порядке приоритета. Композиция остаётся по seq, удаления отсутствующих id — только на end.
 

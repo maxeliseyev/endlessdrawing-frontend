@@ -1,6 +1,6 @@
 # M3: измерения загрузки
 
-Статус 18.11.2026: M3 реализован локально, production не обновлялся. Нормативный контракт — [backend v4](../../endless-drawing-backend/docs/protocol-v4-priority.md). [Сводные данные 30 повторов](performance/m3-statistics.json).
+Статус 18.11.2026: M3 опубликован через [Actions 44364578357](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44364578357). Ниже — локальные контрольные измерения, не production WAN benchmark. Нормативный контракт — [backend v4](../../endless-drawing-backend/docs/protocol-v4-priority.md). [Сводные данные 30 повторов](performance/m3-statistics.json).
 
 ## Методика
 
