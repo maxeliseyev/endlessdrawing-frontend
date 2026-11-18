@@ -18,18 +18,37 @@ async function draw(page: Page, from = [250, 250], to = [450, 250]): Promise<voi
   await page.mouse.up();
 }
 
-async function open(browser: Browser, world: MockWorld): Promise<Page> {
+async function open(browser: Browser, world: MockWorld, camera = { x: 0, y: 0 }): Promise<Page> {
   const context = await browser.newContext({ viewport: { width: 1000, height: 700 }, locale: 'en-US' });
   await useMockWorld(context, world);
-  await context.addInitScript(() => {
-    if (!sessionStorage.getItem('endless-drawing.camera.v1')) sessionStorage.setItem('endless-drawing.camera.v1', '{"x":0,"y":0,"zoom":1}');
-  });
+  await context.addInitScript((value) => {
+    if (!sessionStorage.getItem('endless-drawing.camera.v1')) sessionStorage.setItem('endless-drawing.camera.v1', value);
+  }, JSON.stringify({ ...camera, zoom: 1 }));
   const page = await context.newPage();
   await page.goto('/');
   return page;
 }
 
 const creates = (world: MockWorld) => world.messages.filter((m) => m.type === 'stroke.create');
+
+test('thin strokes remain visible at large absolute world coordinates', async ({ browser }) => {
+  for (const camera of [{ x: 64223135, y: 91962556 }, { x: -999000000, y: 999000000 }]) {
+    const world = createMockWorld();
+    const author = await open(browser, world, camera);
+    const visitor = await open(browser, world, camera);
+    await draw(author);
+    await expect.poll(() => pixel(visitor, 350, 250)).toEqual(INK);
+    for (const [label, y] of [['Chisel pen', 350], ['Spray', 450]] as const) {
+      await author.mouse.click(900, 600, { button: 'right' });
+      await author.getByRole('button', { name: label, exact: true }).click();
+      await author.keyboard.press('Escape');
+      await draw(author, [250, y], [450, y]);
+      await expect.poll(() => visitor.locator('canvas').evaluate(canvasPixels,
+        { op: 'region', cx: 350, cy: y, halfWidth: 40, halfHeight: 20 })).toBe(true);
+    }
+    await author.context().close(); await visitor.context().close();
+  }
+});
 
 test('two visitors share one world; only the author can erase or undo a stroke', async ({ browser }) => {
   const world = createMockWorld();
@@ -156,7 +175,7 @@ test('limited zoom: Ctrl+wheel around the cursor, keyboard and palette, scaled g
   await page.mouse.click(500, 350 + 0.48 + 3);
   await expect.poll(() => world.messages.filter((m) => m.type === 'stroke.delete').length).toBe(1);
   // Subscriptions follow the zoomed-out view and never exceed the server span.
-  for (const m of world.messages.filter((m) => m.type === 'viewport.subscribe')) {
+  for (const m of world.messages.filter((m) => String(m.type).startsWith('viewport.subscribe'))) {
     const b = m.bounds as { min_x: number; max_x: number; min_y: number; max_y: number };
     expect(b.max_x - b.min_x).toBeLessThanOrEqual(30_000);
     expect(b.max_y - b.min_y).toBeLessThanOrEqual(30_000);

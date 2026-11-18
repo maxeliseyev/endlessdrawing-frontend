@@ -41,6 +41,8 @@ STATIC_DIR=../endless-drawing-frontend/dist cargo run
 npm run test:integration   # два/три реальных браузерных контекста против :3000
 ```
 
+Для JSON rollback-проверки запустить backend с `WS_MSGPACK_ENABLED=false` и тест с `E2E_WS_PROFILE=json npm run test:integration`. `E2E_RENDERER=canvas2d` проверяет fallback, `E2E_CAMERA='{"x":1000,"y":1000}'` задаёт воспроизводимую область; по умолчанию тест проверяет Binary frames и текущий renderer.
+
 Тест рисует в случайной области мира, поэтому совместим с непустой dev-БД, но оставляет в ней удалённые (soft delete) тестовые штрихи — лучше использовать отдельную БД.
 
 ### iPhone / iPad в локальной сети
@@ -97,6 +99,8 @@ Vite proxy `/ws`, `/api/admin/*`, `/healthz`, `/readyz` → `http://127.0.0.1:30
 
 ## Хранение и ограничения
 
+Транспорт поддерживает manifest MessagePack v3, MessagePack v2 и явный JSON v1 на одном `/ws`; формат выбирается WebSocket subprotocol до hello. Общий кодек public/admin — `src/transport/`, точность координат float64. Сначала нужен dual-profile backend; старый backend без согласования subprotocol с новым клиентом несовместим. При повторной подписке v3 передаёт membership и догружает только отсутствующие strokes; первый вход/reconnect/resync остаются full snapshot. `WS_MANIFEST_ENABLED=false` на backend откатывает M2 к v2. План ближайшей выкладки — [M1+M2](docs/transport-release.md).
+
 - `localStorage`: `endless-drawing.preferences.v1` — инструмент и кисть.
 - `sessionStorage`: `endless-drawing.camera.v1` — центр и zoom; `endless-drawing.session.v1` — 32-байтный base64url секрет сессии (отправляется только в WS `hello`); `endless-drawing.undo.v1` — UUID своих подтверждённых штрихов (до 500). Новая вкладка — новый секрет и стартовая точка из `hello.ack.spawn` (рядом со случайным живым штрихом, так посетители расходятся вслед за рисунком); в пустом мире — случайный центр в [-250, 250]. Закрытие вкладки завершает право удалять её штрихи.
 - Геометрия хранится сервером; клиент держит кеш текущей подписки (до 20 000 штрихов / 1 000 000 точек, при переполнении — краткое сообщение) и до 64 неподтверждённых штрихов. Подписка — 3× видимая область, не шире 30 000 world units по оси, со сдвигом вперёд по направлению движения; переподписка, когда впереди остаётся меньше половины запаса, или при сильном увеличении. Штрихи нового snapshot появляются по мере прихода chunks.
@@ -106,6 +110,10 @@ Vite proxy `/ws`, `/api/admin/*`, `/healthz`, `/readyz` → `http://127.0.0.1:30
 
 ## Документы
 
+- [Manifest v3: повторное использование геометрии](docs/protocol-v3-manifest.md)
+- [Публикация M1+M2 на действующем HTTPS-сайте](docs/transport-release.md)
+- [WebSocket v2 с MessagePack: контракт и статус](docs/protocol-v2-msgpack.md) — M1 реализован локально, production не обновлялся.
+- [Проект изменений транспорта и загрузки областей](docs/transport-v2-design.md) — codec boundary, этапы внедрения и устранение повторной передачи геометрии.
 - [Продукт и референсы](docs/product.md)
 - [План, решения и открытые вопросы](docs/implementation-plan.md)
 - [Закрытая модерация и вход администратора](docs/moderation.md)

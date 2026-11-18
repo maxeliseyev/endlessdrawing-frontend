@@ -1,3 +1,4 @@
+import { binary } from './support/admin';
 import { expect, test } from '@playwright/test';
 import { adminServer, confirm, login, mockPasskeys, review, SECOND_ID, selectStroke, STROKE_ID, TEST_PASSWORD, TEST_TOKEN } from './support/admin';
 
@@ -165,9 +166,9 @@ test('resync replaces the scene and ignores messages from the previous subscript
   const connection = state.sockets[0]!;
   const oldId = connection.subscription;
   state.strokes.delete(STROKE_ID);
-  connection.route.send(JSON.stringify({ type: 'error', subscription_id: oldId, code: 'resync_required', message: 'Resync' }));
+  connection.route.send(binary({ type: 'error', subscription_id: oldId, code: 'resync_required', message: 'Resync' }));
   // Late chunks from the invalidated subscription must not stop the new load.
-  connection.route.send(JSON.stringify({ type: 'viewport.snapshot.chunk', subscription_id: oldId, strokes: [] }));
+  connection.route.send(binary({ type: 'viewport.snapshot.chunk', subscription_id: oldId, strokes: [] }));
   await expect.poll(() => connection.subscription).not.toBe(oldId);
   await expect(page.locator('.world-status')).toHaveText('Shared world loaded');
   await expect(page.getByRole('heading', { name: 'Selected strokes: 0 / 100' })).toBeVisible();

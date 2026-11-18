@@ -51,19 +51,24 @@ export class SharedScene {
   private livePoints = 0;
   private readonly tombstones = new Set<string>();
   private ordered: Stroke[] | undefined;
+  private respectSnapshotDeletes = false;
+  private readonly loadingAcks = new Map<string, Stroke>();
   revision = 0;
 
   /** A new subscription: keep drawing the old cache until its snapshot ends. */
-  subscribe(id: string): void {
+  subscribe(id: string, respectDeletes = false): void {
     this.subscriptionId = id;
     this.abandonStaging();
+    this.loadingAcks.clear();
     this.phase = 'loading';
+    this.respectSnapshotDeletes = respectDeletes;
   }
 
   /** A new connection. Tombstones refer to the previous event stream. */
   reconnected(): void {
     this.subscriptionId = '';
     this.abandonStaging();
+    this.loadingAcks.clear();
     this.tombstones.clear();
     this.phase = 'loading';
   }
@@ -107,6 +112,7 @@ export class SharedScene {
     if (this.tombstones.has(stroke.id)) { this.touch(); return; }
     const before = this.drawn(stroke.id);
     this.put(stroke, this.confirmed, true);
+    if (this.phase === 'loading' && !this.staging && this.confirmed.has(stroke.id)) this.loadingAcks.set(stroke.id, stroke);
     if (this.staging) this.put(stroke, this.staging, false);
     this.report(stroke.id, before);
     this.touch();
@@ -114,6 +120,18 @@ export class SharedScene {
 
   dropPending(id: string): void {
     if (this.pending.delete(id)) this.touch();
+  }
+
+  /** Reuse immutable geometry without parse/copy, preserving renderer cache identity. */
+  retain(strokes: readonly Stroke[]): void {
+    if (!this.staging) throw new ProtocolError();
+    for (const stroke of strokes) {
+      if (this.tombstones.has(stroke.id)) continue;
+      const before = this.drawn(stroke.id);
+      if (!this.put(stroke, this.staging, false)) throw new ProtocolError();
+      this.report(stroke.id, before);
+    }
+    this.touch();
   }
 
   hide(id: string): void {
@@ -134,6 +152,7 @@ export class SharedScene {
   remove(id: string): void {
     const before = this.drawn(id);
     this.tombstone(id);
+    this.loadingAcks.delete(id);
     this.hidden.delete(id);
     const live = this.confirmed.get(id);
     if (live) { this.livePoints -= live.points.length; this.confirmed.delete(id); }
@@ -154,6 +173,9 @@ export class SharedScene {
     if (type === 'viewport.snapshot.begin') {
       if (this.staging || this.phase === 'ready') throw new ProtocolError();
       this.staging = new Map(); this.stagedPoints = 0; this.truncated = false;
+      // A create ack may precede snapshot.begin while the server reads membership.
+      for (const stroke of this.loadingAcks.values()) this.put(stroke, this.staging, false);
+      this.loadingAcks.clear();
       return 'ignored';
     }
     if (type === 'viewport.snapshot.chunk') {
@@ -162,6 +184,7 @@ export class SharedScene {
       const strokes = message.strokes.map(parseStroke);
       let changed = false;
       for (const stroke of strokes) {
+        if (this.respectSnapshotDeletes && this.tombstones.has(stroke.id)) continue;
         const before = this.drawn(stroke.id);
         this.put(stroke, staging, false);
         changed = this.report(stroke.id, before) || changed;
@@ -176,6 +199,7 @@ export class SharedScene {
       const previous = this.confirmed;
       this.confirmed = this.staging; this.livePoints = this.stagedPoints;
       this.staging = undefined; this.stagedPoints = 0; this.phase = 'ready';
+      this.loadingAcks.clear();
       for (const [id, stroke] of previous) {
         if (!this.confirmed.has(id) && !this.hidden.has(id)) this.listener?.removed(stroke);
       }

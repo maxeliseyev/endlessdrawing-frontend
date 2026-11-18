@@ -17,9 +17,17 @@ export class AdminScene {
   private stagedPoints = 0;
   private livePoints = 0;
 
-  subscribe(id: string): void {
+  subscribe(id: string, preserveCache = false): void {
     this.subscriptionId = id;
-    this.clear();
+    if (!preserveCache) this.clear();
+    else { this.staging = undefined; this.stagedPoints = 0; this.phase = 'loading'; }
+  }
+
+  get(id: string): Stroke | undefined { return this.staging?.get(id) ?? this.strokes.get(id); }
+
+  retain(strokes: readonly Stroke[]): void {
+    if (!this.staging) throw new ProtocolError();
+    for (const stroke of strokes) this.put(stroke);
   }
   clear(): void {
     this.strokes = new Map(); this.staging = undefined; this.deleted.clear();

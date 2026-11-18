@@ -1,3 +1,5 @@
+export const binary = (value: unknown) => Buffer.from(encodeMessagePack(value, SERVER_MESSAGE_BYTES));
+import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../../src/transport/msgpack';
 import { expect, type Page, type WebSocketRoute } from '@playwright/test';
 
 export const TEST_PASSWORD = 'test-only-password-at-least-20-characters';
@@ -127,7 +129,7 @@ export async function adminServer(page: Page, authenticated = false) {
         result = { operation_id: id, hidden: ids.filter((id) => state.strokes.has(id)), already_hidden: ids.filter((id) => !state.strokes.has(id)) };
         for (const id of result.hidden) {
           const stroke = state.strokes.get(id)!; state.strokes.delete(id);
-          for (const socket of state.sockets) if (socket.subscription) socket.route.send(JSON.stringify({ type: 'stroke.deleted', subscription_id: socket.subscription, stroke_id: id, seq: stroke.seq }));
+          for (const socket of state.sockets) if (socket.subscription) socket.route.send(binary({ type: 'stroke.deleted', subscription_id: socket.subscription, stroke_id: id, seq: stroke.seq }));
         }
         state.operations.set(id, result);
       }
@@ -139,13 +141,14 @@ export async function adminServer(page: Page, authenticated = false) {
   await page.routeWebSocket('**/ws', (route) => {
     const socket = { route, subscription: '' }; state.sockets.push(socket);
     route.onMessage((data) => {
-      const message = JSON.parse(String(data)) as Record<string, unknown>; state.messages.push(message);
-      if (message.type === 'hello') route.send(JSON.stringify({ type: 'hello.ack', protocol_version: 1 }));
-      if (message.type === 'viewport.subscribe') {
+      const message = typeof data === 'string' ? JSON.parse(data) as Record<string, unknown> : decodeMessagePack(data); state.messages.push(message);
+      if (message.type === 'hello') route.send(binary({ type: 'hello.ack', protocol_version: 3 }));
+      if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         socket.subscription = message.subscription_id as string;
-        route.send(JSON.stringify({ type: 'viewport.snapshot.begin', subscription_id: socket.subscription }));
-        for (const stroke of state.strokes.values()) route.send(JSON.stringify({ type: 'viewport.snapshot.chunk', subscription_id: socket.subscription, strokes: [stroke] }));
-        route.send(JSON.stringify({ type: 'viewport.snapshot.end', subscription_id: socket.subscription }));
+        if (message.type === 'viewport.subscribe.cached') { route.send(binary({ type: 'viewport.snapshot.fallback', subscription_id: socket.subscription, reason: 'busy' })); return; }
+        route.send(binary({ type: 'viewport.snapshot.begin', subscription_id: socket.subscription }));
+        for (const stroke of state.strokes.values()) route.send(binary({ type: 'viewport.snapshot.chunk', subscription_id: socket.subscription, strokes: [stroke] }));
+        route.send(binary({ type: 'viewport.snapshot.end', subscription_id: socket.subscription }));
       }
     });
   });

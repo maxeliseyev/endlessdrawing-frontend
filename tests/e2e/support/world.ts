@@ -1,3 +1,4 @@
+import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../../src/transport/msgpack';
 import type { BrowserContext, Page, WebSocketRoute } from '@playwright/test';
 
 // Deterministic in-memory WS v1 server for public-canvas E2E. Mirrors the
@@ -5,7 +6,8 @@ import type { BrowserContext, Page, WebSocketRoute } from '@playwright/test';
 // create by UUID, owner-only delete, snapshot begin/chunk/end). It is a test
 // double, not proof of backend integration.
 interface WireStroke { id: string; seq: number; points: number[][]; brush: string; width: number; color: string; opacity: number }
-interface Client { route: WebSocketRoute; secret: string; subscription: string }
+interface Client { route: WebSocketRoute; secret: string; subscription: string;
+  manifest?: { token: string; strokes: Map<string, WireStroke & { own: boolean }>; events: unknown[] } }
 
 export interface MockWorld {
   strokes: Map<string, WireStroke & { owner: string; deleted: boolean }>;
@@ -35,27 +37,49 @@ export function createMockWorld(): MockWorld {
     id: stroke.id, seq: stroke.seq, points: stroke.points, brush: stroke.brush, width: stroke.width,
     color: stroke.color, opacity: stroke.opacity, own: stroke.owner === secret,
   });
-  const send = (client: Client, message: unknown) => { try { client.route.send(JSON.stringify(message)); } catch { /* closed */ } };
+  const send = (client: Client, message: unknown) => { try { client.route.send(Buffer.from(encodeMessagePack(message, SERVER_MESSAGE_BYTES))); } catch { /* closed */ } };
+  const broadcast = (client: Client, message: unknown) => { if (client.manifest) client.manifest.events.push(message); else send(client, message); };
   (world as MockWorld & { attach(route: WebSocketRoute): void }).attach = (route: WebSocketRoute) => {
     const client: Client = { route, secret: '', subscription: '' };
     world.clients.add(client);
     route.onClose(() => world.clients.delete(client));
     route.onMessage((data) => {
-      const message = JSON.parse(String(data)) as Record<string, unknown>;
+      const message = typeof data === 'string' ? JSON.parse(data) as Record<string, unknown> : decodeMessagePack(data);
       world.messages.push(message);
       if (message.type === 'hello') {
         client.secret = String(message.session_secret);
-        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 1, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 1 };
+        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 3, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 3 };
         if (world.helloDelay) setTimeout(() => send(client, ack), world.helloDelay); else send(client, ack);
-      } else if (message.type === 'viewport.subscribe') {
+      } else if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         const id = String(message.subscription_id);
-        client.subscription = id;
+        client.subscription = id; client.manifest = undefined;
         send(client, { type: 'viewport.snapshot.begin', subscription_id: id });
         const visible = [...world.strokes.values()].filter((s) => !s.deleted).sort((a, b) => a.seq - b.seq);
+        if (message.type === 'viewport.subscribe.cached') {
+          const token = crypto.randomUUID();
+          client.manifest = { token, strokes: new Map(visible.map((s) => [s.id, publicStroke(s, client.secret)])), events: [] };
+          send(client, { type: 'viewport.manifest.begin', subscription_id: id, snapshot_token: token,
+            stroke_count: visible.length, point_count: visible.reduce((sum, s) => sum + s.points.length, 0) });
+          for (let i = 0; i < visible.length; i += 1000) send(client, { type: 'viewport.manifest.chunk', subscription_id: id,
+            snapshot_token: token, stroke_ids: visible.slice(i, i + 1000).map((s) => s.id) });
+          send(client, { type: 'viewport.manifest.end', subscription_id: id, snapshot_token: token });
+          return;
+        }
         for (let i = 0; i < visible.length; i += 2) {
           send(client, { type: 'viewport.snapshot.chunk', subscription_id: id, strokes: visible.slice(i, i + 2).map((s) => publicStroke(s, client.secret)) });
         }
         send(client, { type: 'viewport.snapshot.end', subscription_id: id });
+      } else if (message.type === 'viewport.fetch') {
+        const snapshot = client.manifest;
+        if (!snapshot || message.subscription_id !== client.subscription || message.snapshot_token !== snapshot.token) return;
+        const ids = message.stroke_ids as string[];
+        for (let i = 0; i < ids.length; i += 2) send(client, { type: 'viewport.snapshot.chunk', subscription_id: client.subscription,
+          strokes: ids.slice(i, i + 2).map((id) => snapshot.strokes.get(id)) });
+        if (message.final) {
+          client.manifest = undefined;
+          send(client, { type: 'viewport.snapshot.end', subscription_id: client.subscription });
+          for (const event of snapshot.events) send(client, event);
+        } else send(client, { type: 'viewport.fetch.end', subscription_id: client.subscription, snapshot_token: snapshot.token, batch: message.batch });
       } else if (message.type === 'stroke.create') {
         const input = message.stroke as Omit<WireStroke, 'seq'>;
         let stroke = world.strokes.get(input.id);
@@ -72,7 +96,7 @@ export function createMockWorld(): MockWorld {
         const deliver = () => {
           send(client, { type: 'ack', request_id: message.request_id, operation: 'stroke.create', stroke: publicStroke(saved, client.secret) });
           if (fresh) for (const other of world.clients) {
-            if (other.subscription) send(other, { type: 'stroke.created', subscription_id: other.subscription, stroke: publicStroke(saved, other.secret) });
+            if (other.subscription) broadcast(other, { type: 'stroke.created', subscription_id: other.subscription, stroke: publicStroke(saved, other.secret) });
           }
         };
         if (world.holdAcks) world.held.push(deliver); else deliver();
@@ -84,7 +108,7 @@ export function createMockWorld(): MockWorld {
         stroke.deleted = true;
         send(client, { type: 'ack', request_id: message.request_id, operation: 'stroke.delete', stroke_id: stroke.id, seq: stroke.seq, already_deleted: already });
         if (!already) for (const other of world.clients) {
-          if (other.subscription) send(other, { type: 'stroke.deleted', subscription_id: other.subscription, stroke_id: stroke.id, seq: stroke.seq });
+          if (other.subscription) broadcast(other, { type: 'stroke.deleted', subscription_id: other.subscription, stroke_id: stroke.id, seq: stroke.seq });
         }
       }
     });

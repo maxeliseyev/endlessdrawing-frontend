@@ -1,7 +1,10 @@
+import { ManifestLoader } from './transport/manifest';
+import { socketCodec, WS_PROTOCOLS, type WireCodec } from './transport/codec';
+import { CodecError } from './transport/msgpack';
 import type { Bounds } from './camera';
 import { newId, type Point, type StrokeDraft } from './model';
 import { SharedScene } from './scene';
-import { object, parseSpawn, parseStroke, ProtocolError, uuid } from './wire';
+import { parseSpawn, parseStroke, ProtocolError, uuid } from './wire';
 
 export type Notice = 'offline' | 'rejected' | 'deleteFailed' | 'pendingLimit' | 'dense' | 'protocol';
 
@@ -30,7 +33,7 @@ export interface WorldOptions {
    * world is empty or the server does not send one). Advisory only.
    */
   welcome?: (spawn: Point | undefined) => void;
-  createSocket?: (url: string) => WebSocket;
+  createSocket?: (url: string, protocols: string[]) => WebSocket;
   url?: string;
 }
 
@@ -50,11 +53,18 @@ export class SharedWorld {
   private undoStack: string[];
   private readonly timers: Record<'reconnect' | 'subscribe' | 'flush' | 'deadline' | 'offline' | 'ack', ReturnType<typeof setTimeout> | undefined> =
     { reconnect: undefined, subscribe: undefined, flush: undefined, deadline: undefined, offline: undefined, ack: undefined };
-  private readonly createSocket: (url: string) => WebSocket;
+  private readonly createSocket: (url: string, protocols: string[]) => WebSocket;
+  private codec: WireCodec | undefined;
+  private reusable = false;
+  private readonly manifest = new ManifestLoader({
+    get: (id) => this.scene.get(id),
+    retain: (strokes) => { this.scene.retain(strokes); this.options.changed(); },
+    send: (message) => this.socket?.send(this.codec!.encode(message)),
+  });
 
   constructor(private readonly options: WorldOptions) {
     this.undoStack = options.undo.load().slice(-MAX_UNDO);
-    this.createSocket = options.createSocket ?? ((url) => new WebSocket(url));
+    this.createSocket = options.createSocket ?? ((url, protocols) => new WebSocket(url, protocols));
   }
 
   get connected(): boolean { return this.ready; }
@@ -69,6 +79,7 @@ export class SharedWorld {
 
   stop(): void {
     this.stopped = true;
+    this.reusable = false; this.manifest.start('', false);
     for (const key of Object.keys(this.timers) as (keyof typeof this.timers)[]) {
       clearTimeout(this.timers[key]);
       this.timers[key] = undefined;
@@ -162,25 +173,35 @@ export class SharedWorld {
     if (this.stopped) return;
     clearTimeout(this.timers.reconnect);
     this.ready = false;
+    this.codec = undefined; this.reusable = false; this.manifest.start('', false);
     this.scene.reconnected();
     const url = new URL(this.options.url ?? '/ws', globalThis.location?.href ?? 'http://localhost/');
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket;
-    try { socket = this.createSocket(url.href); } catch { this.reconnect(); return; }
+    try { socket = this.createSocket(url.href, WS_PROTOCOLS); } catch { this.reconnect(); return; }
+    socket.binaryType = 'arraybuffer';
     this.socket = socket;
     this.armDeadline(8000);
     socket.onopen = () => {
       // The secret is sent only here, never in URLs or logs.
-      if (this.socket === socket) socket.send(JSON.stringify({ type: 'hello', session_secret: this.options.secret }));
+      if (this.socket !== socket) return;
+      try {
+        this.codec = socketCodec(socket.protocol);
+        socket.send(this.codec.encode({ type: 'hello', session_secret: this.options.secret }));
+      } catch (error) {
+        this.options.notice('protocol');
+        socket.close(error instanceof CodecError ? error.closeCode + 3000 : 4007);
+      }
     };
     socket.onmessage = (event) => {
       if (this.socket !== socket || this.stopped) return;
       try {
-        if (typeof event.data !== 'string' || event.data.length > 4_194_304) throw new ProtocolError();
-        this.receive(object(JSON.parse(event.data)));
-      } catch {
+        if (!this.codec) throw new ProtocolError();
+        this.receive(this.codec.decode(event.data));
+      } catch (error) {
         this.options.notice('protocol');
-        socket.close(4002);
+        // Browser WebSocket.close only permits 1000 or application codes 3000..4999.
+        socket.close(error instanceof CodecError ? error.closeCode + 3000 : 4002);
       }
     };
     socket.onerror = () => { if (this.socket === socket) socket.close(); };
@@ -206,7 +227,7 @@ export class SharedWorld {
 
   private receive(message: Record<string, unknown>): void {
     if (!this.ready) {
-      if (message.type !== 'hello.ack' || message.protocol_version !== 1) throw new ProtocolError();
+      if (message.type !== 'hello.ack' || message.protocol_version !== this.codec?.protocolVersion) throw new ProtocolError();
       const spawn = message.spawn === undefined ? undefined : parseSpawn(message.spawn);
       this.ready = true;
       this.retry = 0;
@@ -220,8 +241,21 @@ export class SharedWorld {
     if (message.type === 'ack') { this.acked(message); return; }
     if (message.type === 'error' && message.request_id !== undefined) { this.failed(message); return; }
     if (message.type === 'error' && message.subscription_id === undefined) throw new ProtocolError();
+    if (message.subscription_id === this.scene.subscriptionId && message.type === 'viewport.snapshot.fallback') {
+      if (this.codec?.protocolVersion !== 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
+      if (message.reason === 'scene_limit') this.options.notice('dense');
+      this.reusable = false; this.manifest.start('', false); this.scene.subscribe('');
+      clearTimeout(this.timers.subscribe);
+      this.timers.subscribe = setTimeout(() => this.subscribe(), 1000);
+      return;
+    }
+    if (this.manifest.accept(message)) return;
     const result = this.scene.accept(message);
+    if (message.type === 'viewport.snapshot.end' && message.subscription_id === this.scene.subscriptionId && this.scene.phase === 'ready') {
+      this.reusable = !this.scene.truncated;
+    }
     if (result === 'resync') {
+      this.reusable = false; this.manifest.start('', false); this.scene.subscribe('');
       clearTimeout(this.timers.subscribe);
       this.timers.subscribe = setTimeout(() => this.subscribe(), 1000);
     } else if (result === 'changed') {
@@ -311,7 +345,7 @@ export class SharedWorld {
       }
       window.push(now);
       this.inFlight.set(request_id, { op, deadline: now + ACK_TIMEOUT });
-      socket.send(JSON.stringify(payload));
+      socket.send(this.codec!.encode(payload));
     }
     if (wait > 0) this.timers.flush = setTimeout(() => this.flush(), wait + 5);
     this.armAckDeadline();
@@ -322,10 +356,12 @@ export class SharedWorld {
     if (!this.ready || !this.bounds || socket?.readyState !== WebSocket.OPEN) return;
     clearTimeout(this.timers.subscribe);
     const subscription_id = newId();
-    this.scene.subscribe(subscription_id);
+    const cached = this.codec?.protocolVersion === 3 && this.reusable;
+    this.manifest.start(subscription_id, cached);
+    this.scene.subscribe(subscription_id, this.codec?.protocolVersion === 3);
     this.subscribeSentAt = Date.now();
     this.subscribedBounds = this.bounds;
-    socket.send(JSON.stringify({ type: 'viewport.subscribe', subscription_id, bounds: this.bounds }));
+    socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds }));
     this.armDeadline(35_000);
   }
 

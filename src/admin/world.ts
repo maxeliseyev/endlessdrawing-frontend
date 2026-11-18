@@ -1,5 +1,7 @@
+import { ManifestLoader } from '../transport/manifest';
+import { socketCodec, WS_PROTOCOLS, type WireCodec } from '../transport/codec';
 import type { Bounds } from '../camera';
-import { object, ProtocolError } from './contracts';
+import { ProtocolError } from './contracts';
 import { AdminScene, SceneLimitError } from './scene';
 import { toBase64url } from './webauthn';
 
@@ -10,6 +12,13 @@ export class ReadOnlyWorld {
   private socket: WebSocket | undefined;
   private stopped = true;
   private ready = false;
+  private codec: WireCodec | undefined;
+  private reusable = false;
+  private readonly manifest = new ManifestLoader({
+    get: (id) => this.scene.get(id),
+    retain: (strokes) => { this.scene.retain(strokes); this.changed('loading'); },
+    send: (message) => this.socket?.send(this.codec!.encode(message)),
+  });
   private retry = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private subscribeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -19,7 +28,7 @@ export class ReadOnlyWorld {
   private readonly secret = toBase64url(crypto.getRandomValues(new Uint8Array(32)));
 
   constructor(private readonly changed: (status: WorldStatus) => void,
-    private readonly createSocket = (url: string) => new WebSocket(url)) {}
+    private readonly createSocket = (url: string, protocols: string[]) => new WebSocket(url, protocols)) {}
 
   start(bounds: Bounds): void {
     this.bounds = bounds;
@@ -28,6 +37,7 @@ export class ReadOnlyWorld {
   }
   stop(): void {
     this.stopped = true;
+    this.reusable = false; this.manifest.start('', false);
     clearTimeout(this.reconnectTimer); clearTimeout(this.subscribeTimer); clearTimeout(this.deadline);
     const socket = this.socket;
     this.socket = undefined; this.ready = false;
@@ -49,33 +59,47 @@ export class ReadOnlyWorld {
   private connect(): void {
     if (this.stopped) return;
     clearTimeout(this.reconnectTimer);
-    this.scene.clear(); this.ready = false; this.changed('connecting');
+    this.scene.clear(); this.ready = false; this.codec = undefined; this.reusable = false; this.manifest.start('', false); this.changed('connecting');
     const url = new URL('/ws', window.location.href);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket;
-    try { socket = this.createSocket(url.href); }
+    try { socket = this.createSocket(url.href, WS_PROTOCOLS); }
     catch { this.reconnect(); return; }
+    socket.binaryType = 'arraybuffer';
     this.socket = socket;
     this.armDeadline(8000);
     socket.onopen = () => {
-      if (this.socket === socket) socket.send(JSON.stringify({ type: 'hello', session_secret: this.secret }));
+      if (this.socket !== socket) return;
+      try {
+        this.codec = socketCodec(socket.protocol, 1_048_576);
+        socket.send(this.codec.encode({ type: 'hello', session_secret: this.secret }));
+      } catch { this.stop(); this.changed('protocol_error'); }
     };
     socket.onmessage = (event) => {
       if (this.socket !== socket || this.stopped) return;
       try {
-        if (typeof event.data !== 'string' || event.data.length > 1_048_576) throw new ProtocolError();
-        const message = object(JSON.parse(event.data));
+        if (!this.codec) throw new ProtocolError();
+        const message = this.codec.decode(event.data);
         if (!this.ready) {
-          if (message.type !== 'hello.ack' || message.protocol_version !== 1) throw new ProtocolError();
+          if (message.type !== 'hello.ack' || message.protocol_version !== this.codec.protocolVersion) throw new ProtocolError();
           this.ready = true;
           this.subscribe();
           return;
         }
         if (message.type === 'error' && message.subscription_id === undefined) throw new ProtocolError();
+        if (message.subscription_id === this.scene.subscriptionId && message.type === 'viewport.snapshot.fallback') {
+          if (this.codec.protocolVersion !== 3 || !['busy', 'scene_limit'].includes(String(message.reason))) throw new ProtocolError();
+          if (message.reason === 'scene_limit') throw new SceneLimitError();
+          this.reusable = false; this.manifest.start('', false); this.scene.subscribe('', true);
+          clearTimeout(this.subscribeTimer); this.subscribeTimer = setTimeout(() => this.subscribe(), 1000);
+          return;
+        }
+        if (this.manifest.accept(message)) return;
         const action = this.scene.accept(message);
+        if (message.type === 'viewport.snapshot.end' && message.subscription_id === this.scene.subscriptionId && this.scene.phase === 'ready') this.reusable = true;
         if (action === 'resync') {
           // Fresh subscription, not a seq-based replay. Rate-limit resync loops.
-          this.scene.subscribe(''); this.changed('loading');
+          this.reusable = false; this.manifest.start('', false); this.scene.subscribe(''); this.changed('loading');
           clearTimeout(this.subscribeTimer);
           this.subscribeTimer = setTimeout(() => this.subscribe(), 1000);
         } else if (action === 'changed') {
@@ -109,8 +133,10 @@ export class ReadOnlyWorld {
     }
     clearTimeout(this.subscribeTimer);
     const subscription_id = crypto.randomUUID();
-    this.scene.subscribe(subscription_id); this.sentAt = Date.now(); this.changed('loading');
-    this.socket.send(JSON.stringify({ type: 'viewport.subscribe', subscription_id, bounds: this.bounds }));
+    const cached = this.codec?.protocolVersion === 3 && this.reusable;
+    this.manifest.start(subscription_id, cached);
+    this.scene.subscribe(subscription_id, this.codec?.protocolVersion === 3); this.sentAt = Date.now(); this.changed('loading');
+    this.socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds }));
     this.armDeadline(35_000);
   }
   private armDeadline(ms: number): void {

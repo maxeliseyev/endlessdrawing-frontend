@@ -689,7 +689,13 @@ export class WebGLSceneRenderer implements SceneRenderer {
     gl.uniform1i(loc.useUniform, this.pass.uniform ? 1 : 0);
     gl.uniform1i(loc.opaquePass, this.pass.opaquePass ? 1 : 0);
     if (this.pass.uniform) {
-      gl.uniform4fv(loc.origin, this.pass.origin);
+      // Subtract absolute world coordinates in JS float64 before the GPU sees
+      // them. Some drivers lose small offsets while subtracting large uniforms.
+      const origin = this.pass.origin;
+      const [x, xLo] = splitFloat(origin[0]! + origin[1]! - (this.cam[0]! + this.cam[1]!));
+      const [y, yLo] = splitFloat(origin[2]! + origin[3]! - (this.cam[2]! + this.cam[3]!));
+      gl.uniform4f(loc.cam, 0, 0, 0, 0);
+      gl.uniform4f(loc.origin, x, xLo, y, yLo);
       gl.uniform4fv(loc.color, this.pass.color);
       gl.uniform1f(loc.depth, this.pass.depth);
     }

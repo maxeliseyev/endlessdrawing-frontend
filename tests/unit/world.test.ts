@@ -1,3 +1,5 @@
+import { JSON_PROTOCOL, MSGPACK_PROTOCOL, MANIFEST_PROTOCOL } from '../../src/transport/codec';
+import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StrokeDraft } from '../../src/model';
 import { MAX_PENDING, SharedScene } from '../../src/scene';
@@ -18,16 +20,18 @@ function wire(id: string, seq: number, own: boolean) {
 class FakeSocket {
   static readonly instances: FakeSocket[] = [];
   readyState = 0;
+  protocol = JSON_PROTOCOL;
+  binaryType = 'blob';
   sent: Record<string, unknown>[] = [];
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
+  onmessage: ((event: { data: string | ArrayBuffer }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(readonly url: string) { FakeSocket.instances.push(this); }
-  send(data: string) { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
+  send(data: string | Uint8Array) { this.sent.push(typeof data === 'string' ? JSON.parse(data) as Record<string, unknown> : decodeMessagePack(data)); }
   close() { if (this.readyState === 3) return; this.readyState = 3; this.onclose?.(); }
   open() { this.readyState = 1; this.onopen?.(); }
-  receive(message: unknown) { this.onmessage?.({ data: JSON.stringify(message) }); }
+  receive(message: unknown) { this.onmessage?.({ data: this.protocol !== JSON_PROTOCOL ? encodeMessagePack(message, SERVER_MESSAGE_BYTES).slice().buffer : JSON.stringify(message) }); }
   of(type: string) { return this.sent.filter((m) => m.type === type); }
   last(type: string) { return this.of(type).at(-1)!; }
   // hello.ack + empty snapshot for the latest subscription.
@@ -62,6 +66,83 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('SharedWorld transport', () => {
+  it('keeps cold/reconnect loads full and reuses geometry only on a live v3 connection', () => {
+    const { world, socket, notices } = setup();
+    const s = socket(); s.protocol = MANIFEST_PROTOCOL; s.open();
+    s.receive({ type: 'hello.ack', protocol_version: 3 });
+    const first = s.last('viewport.subscribe').subscription_id;
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: first });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: first, strokes: [wire(A, 1, false)] });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: first });
+    const cached = world.scene.get(A);
+    world.setBounds(bounds); vi.advanceTimersByTime(300);
+    const next = s.last('viewport.subscribe.cached').subscription_id;
+    const token = '00000000-0000-4000-8000-000000000001';
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: next });
+    s.receive({ type: 'viewport.manifest.begin', subscription_id: next, snapshot_token: token, stroke_count: 1, point_count: 2 });
+    s.receive({ type: 'viewport.manifest.chunk', subscription_id: next, snapshot_token: token, stroke_ids: [A] });
+    s.receive({ type: 'viewport.manifest.end', subscription_id: next, snapshot_token: token });
+    expect(s.last('viewport.fetch').stroke_ids).toEqual([]);
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: next });
+    expect(world.scene.get(A)).toBe(cached);
+    expect(world.scene.phase).toBe('ready');
+    expect(notices).toEqual([]);
+    s.close(); vi.advanceTimersByTime(1000);
+    const reconnected = socket(); reconnected.protocol = MANIFEST_PROTOCOL; reconnected.open();
+    reconnected.receive({ type: 'hello.ack', protocol_version: 3 });
+    expect(reconnected.of('viewport.subscribe')).toHaveLength(1);
+    expect(reconnected.of('viewport.subscribe.cached')).toHaveLength(0);
+  });
+
+  it('falls back from a busy manifest to full and ignores late frames from the invalidated subscription', () => {
+    const { world, socket } = setup(); const s = socket(); s.protocol = MANIFEST_PROTOCOL; s.open();
+    s.receive({ type: 'hello.ack', protocol_version: 3 });
+    const first = s.last('viewport.subscribe').subscription_id;
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: first });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: first });
+    world.setBounds(bounds); vi.advanceTimersByTime(300);
+    const next = s.last('viewport.subscribe.cached').subscription_id;
+    s.receive({ type: 'viewport.snapshot.fallback', subscription_id: next, reason: 'busy' });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: next, strokes: [wire(A, 1, false)] });
+    expect(s.readyState).toBe(1);
+    vi.advanceTimersByTime(1100);
+    expect(s.of('viewport.subscribe')).toHaveLength(2);
+  });
+
+  it('uses binary hello, snapshots, create/undo and reconnect in the negotiated v2 profile', () => {
+    const { world, socket, notices } = setup();
+    const s = socket(); s.protocol = MSGPACK_PROTOCOL;
+    s.open();
+    expect(s.binaryType).toBe('arraybuffer');
+    expect(s.last('hello')).toEqual({ type: 'hello', session_secret: 'A'.repeat(43) });
+    s.receive({ type: 'hello.ack', protocol_version: 2 });
+    const sub = s.last('viewport.subscribe').subscription_id;
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: sub });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: sub, strokes: [wire(B, 2, false)] });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: sub });
+    expect(world.scene.strokes()).toHaveLength(1);
+    world.create(draft(A));
+    s.receive({ type: 'ack', request_id: s.last('stroke.create').request_id,
+      operation: 'stroke.create', stroke: wire(A, 3, true) });
+    world.undo();
+    expect(s.last('stroke.delete').stroke_id).toBe(A);
+    s.receive({ type: 'ack', request_id: s.last('stroke.delete').request_id,
+      operation: 'stroke.delete', stroke_id: A, seq: 3, already_deleted: false });
+    expect(world.scene.strokes().map((stroke) => stroke.id)).toEqual([B]);
+    expect(notices).toEqual([]);
+    s.close(); vi.advanceTimersByTime(1000);
+    const next = socket(); next.protocol = MSGPACK_PROTOCOL; next.open();
+    expect(next.last('hello').session_secret).toBe('A'.repeat(43));
+    next.receive({ type: 'hello.ack', protocol_version: 1 });
+    expect(next.readyState).toBe(3);
+  });
+
+  it('rejects an absent negotiated profile without sending the secret', () => {
+    const { socket } = setup();
+    const s = socket(); s.protocol = ''; s.open();
+    expect(s.sent).toEqual([]); expect(s.readyState).toBe(3);
+  });
+
   it('sends hello with the secret only, then subscribes; seq/own come from the server', () => {
     const { world, socket } = setup();
     const s = socket();

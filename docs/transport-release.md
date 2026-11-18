@@ -1,0 +1,13 @@
+# Публикация M1 + M2
+
+Состояние на 18.11.2026: реализация и локальные проверки M1/M2 готовы; начата публикация через существующий release CI по поручению владельца; результат запуска фиксируется отдельно. Проверены 210 unit, 205 E2E (2 CDP-only skips), три public browser integrations, backend/PostgreSQL/WS suite, fmt/clippy/doc и real localhost HTTPS admin gate с виртуальным UV authenticator, manifest refresh и hide. Реальные Touch ID/iPhone/iPad и внешний HTTPS/WAN ещё не проверены. M3 не требуется ждать для ближайшей выкладки.
+
+Существующая инфраструктура — действующий публичный HTTPS-сайт (открыт 17.11.2026). Backend workflow `Deploy staging` запускается вручную и собирает одну пару frontend/backend в одном образе. Push, PR и обновление frontend сами ничего не выкладывают. Название workflow и environment `staging` сохранено исторически. Обновление приложения сохраняет действующую политику доступа. Текущий статус площадки — [backend publication.md](../../endless-drawing-backend/docs/publication.md), операционные команды — [deployment.md](../../endless-drawing-backend/docs/deployment.md).
+
+1. Зафиксировать и проверить оба repository commits; передавать workflow точный frontend SHA, сохранять оба SHA в release metadata. Backend и frontend должны включать совместимые v1/v2/v3 контракты и общий fixture corpus.
+2. Проверить актуальный серверный Compose обычным deployment-процессом: он должен передавать `WS_MSGPACK_ENABLED` и `WS_MANIFEST_ENABLED`. Локальная правка Compose не меняет файл на VPS. Новые DB migrations и runtime credentials для M1/M2 не нужны.
+3. Выполнить CI, полный public/admin browser gate и сборку образа. Функциональные mocks не заменяют real backend/DB gate. Затем пройти проверки environment `staging` (включая approval, если он настроен) и активировать immutable image обычным helper с pre-deploy backup/readiness/rollback.
+4. На действующем HTTPS-сайте проверить выбранный subprotocol v3, первый full snapshot, pan/повторную область без повторной geometry, live create/delete/hide, reconnect, реальные Safari iPhone/iPad и сеть с задержкой. Не публиковать реальные secret-bearing hello captures.
+5. При проблеме M2 выключить выбор v3 (`WS_MANIFEST_ENABLED=false`) для новых соединений, оставив v2. При проблеме M1 выключить оба binary профиля (`WS_MSGPACK_ENABLED=false`): новый клиент предложит JSON v1. Открытый сокет меняет формат только после reconnect. Откат на старый backend без subprotocol требует учитывать уже открытые новые вкладки; предпочтителен dual-profile/v3-aware rollback образ.
+
+После успешных CI gates существующий workflow выкладывает M1+M2 на действующий HTTPS-сайт. Пара SHA сохраняется в release metadata; завершение workflow и readiness проверяются отдельно.
