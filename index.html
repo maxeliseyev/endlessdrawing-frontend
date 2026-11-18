@@ -4,14 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="One drawing. Everyone. Forever." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="description" content="One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации." />
     <link rel="canonical" href="https://endlessdrawing.com/" />
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ru_RU" />
     <meta property="og:site_name" content="Endless Drawing" />
     <meta property="og:url" content="https://endlessdrawing.com/" />
     <meta property="og:title" content="Endless Drawing" />
-    <meta property="og:description" content="One drawing. Everyone. Forever." />
+    <meta property="og:description" content="One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации." />
     <meta property="og:image" content="https://endlessdrawing.com/og-image.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
@@ -19,12 +22,45 @@
     <meta property="og:image:alt" content="Endless Drawing — one drawing. everyone. forever." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Endless Drawing" />
-    <meta name="twitter:description" content="One drawing. Everyone. Forever." />
+    <meta name="twitter:description" content="One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации." />
     <meta name="twitter:image" content="https://endlessdrawing.com/og-image.jpg" />
     <title>Endless Drawing</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://endlessdrawing.com/#website",
+            "name": "Endless Drawing",
+            "url": "https://endlessdrawing.com/",
+            "description": "One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации.",
+            "inLanguage": ["en", "ru"],
+            "image": "https://endlessdrawing.com/og-image.jpg"
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://endlessdrawing.com/#app",
+            "name": "Endless Drawing",
+            "url": "https://endlessdrawing.com/",
+            "applicationCategory": "DesignApplication",
+            "operatingSystem": "Web",
+            "browserRequirements": "Requires JavaScript",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "description": "One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации.",
+            "image": "https://endlessdrawing.com/og-image.jpg",
+            "inLanguage": ["en", "ru"]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <main id="app"></main>
+    <noscript>
+      <p>Endless Drawing. One drawing. Everyone. Forever. A shared infinite canvas — draw with everyone, no account. Общий бесконечный холст: рисуйте вместе, без регистрации. JavaScript is required. Нужен JavaScript.</p>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

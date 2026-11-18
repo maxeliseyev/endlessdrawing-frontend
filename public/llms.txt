@@ -1,0 +1,9 @@
+# Endless Drawing
+
+> One drawing. Everyone. Forever.
+
+A shared infinite white canvas at https://endlessdrawing.com. Open the page and draw with everyone. No account. Общий бесконечный холст: рисуйте вместе, без регистрации.
+
+The public page is the canvas itself. There is no separate landing page. Tools open on request. English by default; Russian when the browser prefers ru. The drawing is saved on the server and seen live by everyone on the same canvas.
+
+The private administration area is not part of the public site and is excluded from the sitemap.

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { SITE_DESCRIPTION } from '../support/metadata';
 import { useMockWorld } from './support/world';
 
 // The public canvas is server-backed; every page talks to a WS v1 test double.
@@ -45,7 +46,7 @@ for (const scenario of scenarios) {
       const ui = labels[scenario.expected];
       await expect(page.locator('html')).toHaveAttribute('lang', scenario.expected);
       await expect(page).toHaveTitle('Endless Drawing');
-      await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'One drawing. Everyone. Forever.');
+      await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', SITE_DESCRIPTION);
       expect(await page.locator('body').innerText()).toBe('');
       await expect(page.locator('canvas')).toHaveAccessibleName(ui.canvas);
 

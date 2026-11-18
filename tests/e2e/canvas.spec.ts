@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { SITE_DESCRIPTION } from '../support/metadata';
 import { canvasPixels } from '../support/pixels';
 import { useMockWorld } from './support/world';
 
@@ -41,8 +42,32 @@ test.beforeEach(async ({ page, context }) => {
 
 test('opens directly on a white canvas: brand metadata, no welcome/banner/panel', async ({ page }) => {
   await expect(page).toHaveTitle('Endless Drawing');
-  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'One drawing. Everyone. Forever.');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', SITE_DESCRIPTION);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'index, follow, max-image-preview:large');
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', SITE_DESCRIPTION);
+  await expect(page.locator('meta[property="og:locale"]')).toHaveAttribute('content', 'en_US');
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://endlessdrawing.com/');
+  const structured = JSON.parse(await page.locator('script[type="application/ld+json"]').textContent() ?? '') as {
+    '@graph': { '@type': string; url: string; description: string }[];
+  };
+  expect(structured['@graph'].map((node) => node['@type'])).toEqual(['WebSite', 'WebApplication']);
+  expect(structured['@graph'].every((node) => node.url === 'https://endlessdrawing.com/' && node.description === SITE_DESCRIPTION)).toBe(true);
+  expect(JSON.stringify(structured)).not.toContain('/admin');
+  const robots = await page.request.get('/robots.txt');
+  expect(robots.ok()).toBe(true);
+  const robotsText = await robots.text();
+  expect(robotsText).toContain('Disallow: /admin');
+  expect(robotsText).toContain('Sitemap: https://endlessdrawing.com/sitemap.xml');
+  const sitemap = await page.request.get('/sitemap.xml');
+  expect(sitemap.ok()).toBe(true);
+  const xml = await sitemap.text();
+  expect(xml).toContain('<loc>https://endlessdrawing.com/</loc>');
+  expect(xml.match(/<loc>/g)).toHaveLength(1);
+  expect(xml).not.toContain('admin');
+  const llms = await page.request.get('/llms.txt');
+  expect(llms.ok()).toBe(true);
+  expect(await llms.text()).toContain('One drawing. Everyone. Forever.');
+  expect(await page.content()).toContain('JavaScript is required');
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.png');
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute('type', 'image/png');
   const icon = await page.request.get('/favicon.png');

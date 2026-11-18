@@ -1,0 +1,10 @@
+# Public canvas only. The administration area stays out of the index.
+User-agent: *
+Disallow: /admin
+Disallow: /api
+Disallow: /healthz
+Disallow: /readyz
+Disallow: /ws
+
+Host: endlessdrawing.com
+Sitemap: https://endlessdrawing.com/sitemap.xml
