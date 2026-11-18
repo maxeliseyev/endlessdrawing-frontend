@@ -1,8 +1,8 @@
 import { JSON_PROTOCOL, MSGPACK_PROTOCOL, MANIFEST_PROTOCOL, PRIORITY_PROTOCOL } from '../../src/transport/codec';
 import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StrokeDraft } from '../../src/model';
-import { MAX_PENDING, SharedScene } from '../../src/scene';
+import { MAX_POINTS, type StrokeDraft } from '../../src/model';
+import { MAX_OUTSIDE_POINTS, MAX_PENDING, SharedScene } from '../../src/scene';
 import { SharedWorld, type Notice } from '../../src/world';
 
 const A = '00000000-0000-4000-8000-00000000000a';
@@ -93,6 +93,37 @@ describe('SharedWorld transport', () => {
     expect(world.scene.get(B)).toBe(cached);
     expect(world.scene.strokes().map((s) => s.id)).toEqual([A, B, C]);
     expect(notices).toEqual([]);
+    world.stop();
+  });
+
+  it('pans away and back on v3 without fetching geometry it already had', () => {
+    const { world, socket } = setup();
+    const s = socket(); s.protocol = MANIFEST_PROTOCOL; s.open();
+    s.receive({ type: 'hello.ack', protocol_version: 3 });
+    const first = s.last('viewport.subscribe').subscription_id;
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: first });
+    s.receive({ type: 'viewport.snapshot.chunk', subscription_id: first, strokes: [wire(A, 1, false)] });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: first });
+    const cached = world.scene.get(A);
+    const away = { min_x: 1000, min_y: -100, max_x: 1200, max_y: 100 };
+    world.setBounds(away); vi.advanceTimersByTime(300);
+    const right = s.last('viewport.subscribe.cached').subscription_id;
+    const t1 = '00000000-0000-4000-8000-000000000001';
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: right });
+    s.receive({ type: 'viewport.manifest.begin', subscription_id: right, snapshot_token: t1, stroke_count: 0, point_count: 0 });
+    s.receive({ type: 'viewport.manifest.end', subscription_id: right, snapshot_token: t1 });
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: right });
+    expect(world.scene.get(A)).toBe(cached); // left the area, still cached and drawn
+    world.setBounds(bounds); vi.advanceTimersByTime(300);
+    const back = s.last('viewport.subscribe.cached').subscription_id;
+    const t2 = '00000000-0000-4000-8000-000000000002';
+    s.receive({ type: 'viewport.snapshot.begin', subscription_id: back });
+    s.receive({ type: 'viewport.manifest.begin', subscription_id: back, snapshot_token: t2, stroke_count: 1, point_count: 2 });
+    s.receive({ type: 'viewport.manifest.chunk', subscription_id: back, snapshot_token: t2, stroke_ids: [A] });
+    s.receive({ type: 'viewport.manifest.end', subscription_id: back, snapshot_token: t2 });
+    expect(s.last('viewport.fetch').stroke_ids).toEqual([]); // nothing to download again
+    s.receive({ type: 'viewport.snapshot.end', subscription_id: back });
+    expect(world.scene.get(A)).toBe(cached);
     world.stop();
   });
 
@@ -437,6 +468,51 @@ describe('SharedScene', () => {
     expect(scene.confirmed.has(A)).toBe(false); // ...and the buffered event follows it.
     scene.accept({ type: 'stroke.created', subscription_id: 's1', stroke: wire(A, 1, true) });
     expect(scene.confirmed.has(A)).toBe(false);
+  });
+
+  it('keeps strokes that only left the subscribed area; drops ones deleted inside it', () => {
+    const scene = new SharedScene();
+    const log: string[] = [];
+    scene.listener = { added: (s) => log.push(`+${s.id.at(-1)}`), removed: (s) => log.push(`-${s.id.at(-1)}`) };
+    const at = (id: string, seq: number, x: number) => ({ ...wire(id, seq, false), points: [[x, 0], [x + 10, 5]] });
+    scene.subscribe('s1', true, { min_x: -100, min_y: -100, max_x: 100, max_y: 100 });
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's1' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's1', strokes: [at(A, 1, -80), at(B, 2, 60)] });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's1' });
+    log.length = 0;
+    // Pan right: A is now outside the area, B is inside it but absent (deleted meanwhile).
+    scene.subscribe('s2', true, { min_x: 0, min_y: -100, max_x: 200, max_y: 100 });
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's2' });
+    scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's2', strokes: [at(C, 3, 150)] });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's2' });
+    expect(log).toEqual(['+c', '-b']); // A never blinks
+    expect(scene.strokes().map((s) => s.id)).toEqual([A, C]);
+    // Coming back, the authoritative snapshot drops A if it was deleted while out of the area.
+    scene.subscribe('s3', true, { min_x: -100, min_y: -100, max_x: 100, max_y: 100 });
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's3' });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's3' });
+    expect(scene.strokes().map((s) => s.id)).toEqual([C]); // C (x 150..160) is outside s3 now
+  });
+
+  it('bounds the strokes kept outside the area, dropping the farthest first', () => {
+    const scene = new SharedScene();
+    // Three groups of full-size strokes, each half of the outside budget: only two fit.
+    const perGroup = MAX_OUTSIDE_POINTS / 2 / MAX_POINTS;
+    const group = (tag: number, x: number) => Array.from({ length: perGroup }, (_, i) => ({
+      ...wire(`00000000-0000-4000-8000-${String(tag * 1000 + i).padStart(12, '0')}`, tag * 1000 + i + 1, false),
+      points: Array.from({ length: MAX_POINTS }, (_, k) => [x, k % 50]),
+    }));
+    const far = group(1, -9000), near = group(2, -500), middle = group(3, -3000);
+    scene.subscribe('s1', true, { min_x: -10_000, min_y: -100, max_x: 10_000, max_y: 100 });
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's1' });
+    for (const strokes of [far, near, middle]) scene.accept({ type: 'viewport.snapshot.chunk', subscription_id: 's1', strokes });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's1' });
+    scene.subscribe('s2', true, { min_x: 0, min_y: -100, max_x: 1000, max_y: 100 });
+    scene.accept({ type: 'viewport.snapshot.begin', subscription_id: 's2' });
+    scene.accept({ type: 'viewport.snapshot.end', subscription_id: 's2' });
+    const kept = new Set(scene.strokes().map((s) => s.id));
+    expect(kept.size).toBe(2 * perGroup);
+    expect(far.some((s) => kept.has(s.id))).toBe(false); // the farthest group is dropped
   });
 
   it('bounds pending strokes and rejects malformed snapshot order', () => {

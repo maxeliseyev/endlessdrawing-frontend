@@ -359,7 +359,7 @@ export class SharedWorld {
     const subscription_id = newId();
     const cached = (this.codec?.protocolVersion ?? 1) >= 3 && this.reusable;
     this.manifest.start(subscription_id, cached);
-    this.scene.subscribe(subscription_id, (this.codec?.protocolVersion ?? 1) >= 3);
+    this.scene.subscribe(subscription_id, (this.codec?.protocolVersion ?? 1) >= 3, this.bounds);
     this.subscribeSentAt = Date.now();
     this.subscribedBounds = this.bounds;
     socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds,

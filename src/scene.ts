@@ -1,10 +1,16 @@
-import type { Stroke, StrokeDraft } from './model';
+import { intersects, type Bounds } from './camera';
+import { strokeExtent, type Stroke, type StrokeDraft } from './model';
 import { object, parseStroke, ProtocolError, text, uuid } from './wire';
 
 export const MAX_SCENE_STROKES = 20_000;
 export const MAX_SCENE_POINTS = 1_000_000;
 export const MAX_PENDING = 64;
 const MAX_TOMBSTONES = 20_000;
+/**
+ * Strokes that left the subscription (pan) stay cached up to this many points,
+ * nearest first: panning back must not blank and re-download them.
+ */
+export const MAX_OUTSIDE_POINTS = 400_000;
 
 export type SceneResult = 'changed' | 'ignored' | 'resync';
 
@@ -53,11 +59,17 @@ export class SharedScene {
   private ordered: Stroke[] | undefined;
   private respectSnapshotDeletes = false;
   private readonly loadingAcks = new Map<string, Stroke>();
+  private scope: Bounds | undefined;
   revision = 0;
 
-  /** A new subscription: keep drawing the old cache until its snapshot ends. */
-  subscribe(id: string, respectDeletes = false): void {
+  /**
+   * A new subscription: keep drawing the old cache until its snapshot ends.
+   * With `bounds`, cached strokes entirely outside them survive that end (see
+   * `keepOutside`); without, the snapshot replaces the whole cache.
+   */
+  subscribe(id: string, respectDeletes = false, bounds?: Bounds): void {
     this.subscriptionId = id;
+    this.scope = bounds;
     this.abandonStaging();
     this.loadingAcks.clear();
     this.phase = 'loading';
@@ -200,8 +212,8 @@ export class SharedScene {
       this.confirmed = this.staging; this.livePoints = this.stagedPoints;
       this.staging = undefined; this.stagedPoints = 0; this.phase = 'ready';
       this.loadingAcks.clear();
-      for (const [id, stroke] of previous) {
-        if (!this.confirmed.has(id) && !this.hidden.has(id)) this.listener?.removed(stroke);
+      for (const stroke of this.keepOutside(previous)) {
+        if (!this.hidden.has(stroke.id)) this.listener?.removed(stroke);
       }
       for (const id of this.hidden) if (!this.confirmed.has(id)) this.hidden.delete(id);
       this.touch();
@@ -241,6 +253,40 @@ export class SharedScene {
       if (!this.put(stroke, this.confirmed, true) && !this.hidden.has(id)) this.listener?.removed(stroke);
     }
     this.touch();
+  }
+
+  /**
+   * After `snapshot.end`: a stroke missing from the snapshot was deleted only
+   * if it lies in the subscribed area. One entirely outside simply left the
+   * area (pan): it stays cached and drawn, nearest to the area first, within
+   * the scene limits and MAX_OUTSIDE_POINTS. Out of the area no delete events
+   * arrive, so it may be stale until a later snapshot covers that ground again;
+   * that snapshot (or its manifest) is authoritative and drops it if deleted.
+   * The client extent is never smaller than the server bbox, so a stroke the
+   * server would have listed is never kept by mistake. Returns the dropped ones.
+   */
+  private keepOutside(previous: Map<string, Stroke>): Stroke[] {
+    const scope = this.scope;
+    const dropped: Stroke[] = [];
+    const outside: { stroke: Stroke; distance: number }[] = [];
+    for (const [id, stroke] of previous) {
+      if (this.confirmed.has(id)) continue;
+      const extent = scope ? strokeExtent(stroke) : undefined;
+      if (!scope || !extent || intersects(extent, scope)) { dropped.push(stroke); continue; }
+      const dx = Math.max(scope.min_x - extent.max_x, extent.min_x - scope.max_x, 0);
+      const dy = Math.max(scope.min_y - extent.max_y, extent.min_y - scope.max_y, 0);
+      outside.push({ stroke, distance: Math.hypot(dx, dy) });
+    }
+    outside.sort((a, b) => a.distance - b.distance);
+    let kept = 0;
+    for (const { stroke } of outside) {
+      const points = stroke.points.length;
+      if (kept + points > MAX_OUTSIDE_POINTS || this.confirmed.size >= MAX_SCENE_STROKES ||
+          this.livePoints + points > MAX_SCENE_POINTS) { dropped.push(stroke); continue; }
+      this.confirmed.set(stroke.id, stroke);
+      this.livePoints += points; kept += points;
+    }
+    return dropped;
   }
 
   private drawn(id: string): Stroke | undefined {
