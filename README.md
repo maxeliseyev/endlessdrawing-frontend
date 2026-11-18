@@ -112,7 +112,7 @@ Vite proxy `/ws`, `/api/admin/*`, `/healthz`, `/readyz` → `http://127.0.0.1:30
 
 - [Manifest v3: повторное использование геометрии](docs/protocol-v3-manifest.md)
 - [Публикация M1+M2 на действующем HTTPS-сайте](docs/transport-release.md)
-- [WebSocket v2 с MessagePack: контракт и статус](docs/protocol-v2-msgpack.md) — M1 реализован локально, production не обновлялся.
+- [WebSocket v2 с MessagePack: контракт и статус](docs/protocol-v2-msgpack.md) — M1+M2 опубликованы 18.11.2026, [результат CI и WSS-проверки](docs/transport-release.md).
 - [Проект изменений транспорта и загрузки областей](docs/transport-v2-design.md) — codec boundary, этапы внедрения и устранение повторной передачи геометрии.
 - [Продукт и референсы](docs/product.md)
 - [План, решения и открытые вопросы](docs/implementation-plan.md)

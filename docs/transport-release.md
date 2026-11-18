@@ -1,6 +1,6 @@
 # Публикация M1 + M2
 
-Состояние на 18.11.2026: реализация и локальные проверки M1/M2 готовы; начата публикация через существующий release CI по поручению владельца; результат запуска фиксируется отдельно. Проверены 210 unit, 205 E2E (2 CDP-only skips), три public browser integrations, backend/PostgreSQL/WS suite, fmt/clippy/doc и real localhost HTTPS admin gate с виртуальным UV authenticator, manifest refresh и hide. Реальные Touch ID/iPhone/iPad и внешний HTTPS/WAN ещё не проверены. M3 не требуется ждать для ближайшей выкладки.
+Состояние на 18.11.2026: M1/M2 опубликованы на действующем HTTPS-сайте через [Actions 44320255728](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44320255728), все jobs successful. Проверены 210 unit, 205 E2E (2 CDP-only skips), три public browser integrations, backend/PostgreSQL/WS suite, fmt/clippy/doc и real localhost HTTPS admin gate с виртуальным UV authenticator, manifest refresh и hide. Реальные Touch ID/iPhone/iPad для нового транспорта, browser paint/CPU/memory и нагрузочный WAN baseline ещё не проверены; внешние read-only HTTPS/WSS проверки выполнены после выкладки. M3 не требуется ждать для ближайшей выкладки.
 
 Существующая инфраструктура — действующий публичный HTTPS-сайт (открыт 17.11.2026). Backend workflow `Deploy staging` запускается вручную и собирает одну пару frontend/backend в одном образе. Push, PR и обновление frontend сами ничего не выкладывают. Название workflow и environment `staging` сохранено исторически. Обновление приложения сохраняет действующую политику доступа. Текущий статус площадки — [backend publication.md](../../endless-drawing-backend/docs/publication.md), операционные команды — [deployment.md](../../endless-drawing-backend/docs/deployment.md).
 
@@ -11,3 +11,11 @@
 5. При проблеме M2 выключить выбор v3 (`WS_MANIFEST_ENABLED=false`) для новых соединений, оставив v2. При проблеме M1 выключить оба binary профиля (`WS_MSGPACK_ENABLED=false`): новый клиент предложит JSON v1. Открытый сокет меняет формат только после reconnect. Откат на старый backend без subprotocol требует учитывать уже открытые новые вкладки; предпочтителен dual-profile/v3-aware rollback образ.
 
 После успешных CI gates существующий workflow выкладывает M1+M2 на действующий HTTPS-сайт. Пара SHA сохраняется в release metadata; завершение workflow и readiness проверяются отдельно.
+
+## Подтверждённая выкладка 18.11.2026
+
+- Backend: `3bdb9887e7e2c8bf93e3542610f6c1a739a7a19b`; frontend кода в образе: `eb531f071d5e90fcd757b914a28bd5950c360a09`. Образ: `endlessdrawing-app:3bdb9887e7e2c8bf93e3542610f6c1a739a7a19b-44320255728-1`. Последующая правка этой документации не меняет приложение в образе.
+- Обычный Backend CI и release verify/build/deploy завершились успешно. В release проверены реальные HTTPS admin и public Chromium/Firefox/WebKit, контейнер, backup recovery и Caddy.
+- Серверный Compose обновлён только двумя переменными протокола, с проверкой SHA-256 исходной версии. Runtime credentials, DB schema и правила доступа не менялись; штатный preflight прошёл. Предыдущий образ сохранён: `endlessdrawing-app:4103b38d946b4ea53de29a6b6aeedbe5dd0aaa59-44298629102-1`.
+- Внешний HTTPS: `/readyz` → 200 ready; public/admin HTML → 200; хеши всех JS/CSS, указанных обоими entry, совпали с локальной сборкой; admin session без cookie → 401.
+- Read-only WSS: v3/v2/explicit JSON и legacy JSON приняты. Одна и та же область: 34 штриха / 4757 точек; JSON 192317 bytes, MessagePack 94883 bytes. Два повторных v3 snapshot: по 1910 bytes manifest/control, **0 geometry chunks / 0 переданных точек**. Штрихи не создавались и не удалялись. Это размеры application payload конкретной области без TLS/TCP/WS overhead, не универсальный коэффициент и не browser latency benchmark.

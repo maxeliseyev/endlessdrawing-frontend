@@ -1,6 +1,6 @@
 # WebSocket v2: MessagePack
 
-M1 реализован локально 18.11.2026. Единственная нормативная wire-спецификация перенесена в backend: [protocol-v2-msgpack.md](../../endless-drawing-backend/docs/protocol-v2-msgpack.md). JSON v1 сохраняется для совместимости. Production не обновлялся; приёмка HTTPS/iPhone/iPad остаётся отдельной.
+M1 опубликован вместе с M2 18.11.2026; [CI и внешние проверки](transport-release.md). Единственная нормативная wire-спецификация перенесена в backend: [protocol-v2-msgpack.md](../../endless-drawing-backend/docs/protocol-v2-msgpack.md). JSON v1 сохраняется для совместимости. Внешние HTTPS/WSS проверки прошли; приёмка нового транспорта на iPhone/iPad остаётся отдельной.
 
 Public и read-only admin используют общий codec boundary в `src/transport/`: согласование subprotocol, Binary/ArrayBuffer, float64, строковые UUID, byte/structural limits перед decode. HTTP Admin API и геометрия кистей прежние.
 

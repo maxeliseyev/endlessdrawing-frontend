@@ -69,7 +69,7 @@
 
 ### M. MessagePack и загрузка областей — проектирование (18.11.2026)
 
-По поручению владельца начата новая спецификация. Документы: [WebSocket v2 / MessagePack](protocol-v2-msgpack.md), [архитектура и следующие этапы](transport-v2-design.md). M1 реализован локально: public/admin и backend поддерживают MessagePack v2 и JSON v1. Нормативный контракт перенесён в backend `docs/protocol-v2-msgpack.md`. Production не обновлялся; M2 реализован отдельным v3, M3 остаётся проектом.
+По поручению владельца начата новая спецификация. Документы: [WebSocket v2 / MessagePack](protocol-v2-msgpack.md), [архитектура и следующие этапы](transport-v2-design.md). M1 реализован локально: public/admin и backend поддерживают MessagePack v2 и JSON v1. Нормативный контракт перенесён в backend `docs/protocol-v2-msgpack.md`. M1+M2 опубликованы 18.11.2026; M2 реализован отдельным v3, M3 остаётся проектом.
 
 - [x] Измерено чтением production без мутаций: 94 штриха / 21 430 точек — JSON 858 499 bytes, диагностический MessagePack 419 193 bytes. Повтор области и pan на 0.55 экрана заново передали все 94 штриха. Ни browser decode/paint, ни точная камера со скриншота этим не измерены.
 - [x] Проект M1: negotiation через WS subprotocol, именованные MessagePack maps, float64, явные строковые UUID, byte/structural limits, общая codec boundary public/admin, dual-profile rollout/rollback.
@@ -79,12 +79,12 @@
 - [x] Frontend: check/build, 188 unit, 205 E2E passed / 2 CDP-only skips; Chromium/Firefox/WebKit. Backend: полный PostgreSQL/WS/admin suite, fmt/clippy/doc.
 - [x] Legacy JSON / explicit JSON / MessagePack / mixed clients, ownership, snapshot/create/delete/reconnect: backend PostgreSQL/WS tests, общий корпус 25 сообщений от Rust и TS и SHA-256 manifest. Public/admin mocks работают с binary.
 - [x] При интеграции выявлена независимая от кодека точность WebGL на больших координатах; uniform origin-camera вычитается в CPU float64. Добавлен round/chisel/spray browser regression почти у world limit.
-- [ ] Staging HTTPS/WSS, реальные iPhone/iPad, production bytes/CPU/first-visible-paint/memory baseline и выкладка M1.
+- [ ] Реальные iPhone/iPad, production CPU/first-visible-paint/memory и нагрузочный WAN baseline нового транспорта.
 - [x] M2: [manifest v3](protocol-v3-manifest.md), ограниченные UUID/token/fetch batches, повторное использование immutable objects public/admin, авторитетное снятие отсутствующих id на end. Metadata transaction закрывается до ожидания клиента; soft delete после границы доставляется после end.
 - [x] M2: 210 unit, 205 E2E passed / 2 CDP-only skips; check/build; real public integration в Chromium/Firefox/WebKit.
 - [x] M2: PostgreSQL/WS проверки warm/partial cache, deletion/purge, неверный scope/token/batch, cancellation, busy/slow client, dense limit, event overflow, pool release и откат v3→v2. Реальный browser integration подтвердил только 1 новый stroke при overlap и 0 geometry chunks при тёплом возврате в Chromium/Firefox/WebKit.
 - [x] Локальный real HTTPS admin gate: Chromium + native virtual UV WebAuthn + PostgreSQL, manifest-refresh без geometry, audited hide и refresh без возврата hidden stroke, TOTP и logout. Это не Touch ID/iPhone/iPad приёмка.
-- [ ] Публикация: по поручению владельца запускается release CI с проверенной парой SHA M1+M2 для действующего HTTPS-сайта; [порядок и rollback](transport-release.md). Успешная выкладка подтверждается отдельно.
+- [x] Публикация: release CI [44320255728](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44320255728) successful, backend `3bdb988` / frontend `eb531f0`; внешний HTTPS, хеши assets и v3/v2/JSON проверены. Повтор одной области (34 штриха / 4757 точек): 1910 bytes control, 0 geometry вместо JSON 192317 bytes; [результат и rollback](transport-release.md).
 - [ ] M3: один согласованный snapshot с приоритетом видимой geometry, сохранение порядка композиции seq, benchmark на Safari iPhone/iPad и slow WAN.
 
 ### Z. Ограниченный зум — сделано (16.11.2026, решение владельца)
