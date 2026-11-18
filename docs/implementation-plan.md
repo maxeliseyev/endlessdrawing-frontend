@@ -86,7 +86,11 @@
 - [x] M2: PostgreSQL/WS проверки warm/partial cache, deletion/purge, неверный scope/token/batch, cancellation, busy/slow client, dense limit, event overflow, pool release и откат v3→v2. Реальный browser integration подтвердил только 1 новый stroke при overlap и 0 geometry chunks при тёплом возврате в Chromium/Firefox/WebKit.
 - [x] Локальный real HTTPS admin gate: Chromium + native virtual UV WebAuthn + PostgreSQL, manifest-refresh без geometry, audited hide и refresh без возврата hidden stroke, TOTP и logout. Это не Touch ID/iPhone/iPad приёмка.
 - [x] Публикация: release CI [44320255728](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44320255728) successful, backend `3bdb988` / frontend `eb531f0`; внешний HTTPS, хеши assets и v3/v2/JSON проверены. Повтор одной области (34 штриха / 4757 точек): 1910 bytes control, 0 geometry вместо JSON 192317 bytes; [результат и rollback](transport-release.md).
-- [ ] M3: один согласованный snapshot с приоритетом видимой geometry, сохранение порядка композиции seq, benchmark на Safari iPhone/iPad и slow WAN.
+- [x] Владелец 18.11.2026 выбрал M3 следующим этапом после публикации мелкого спрея; [порядок работы и критерии](transport-v2-design.md#6-m3-сначала-видимая-область).
+- [ ] M3 baseline: фиксированные сцены и camera paths, первый видимый кадр/завершение видимой части, snapshot.end, decode/geometry/frame time/bytes и доступные измерения памяти; p50/p95, 16/100/400%, DPR 1/2 и ограниченная сеть.
+- [ ] M3 контракт/fixtures: hint видимой области, clipped к подписке и миру; согласовать negotiation в backend до реализации. Cold snapshot без дополнительного manifest RTT; warm — приоритет только missing geometry.
+- [ ] M3 реализация: один согласованный snapshot, видимое раньше запаса, seq-композиция, прежние cache identity/own ack/tombstones/end и лимиты.
+- [ ] M3 приёмка/публикация: сопоставить с baseline, реальные public/admin integrations и отдельная выкладка; физические Safari iPhone/iPad остаются самостоятельной проверкой.
 
 ### Z. Ограниченный зум — сделано (16.11.2026, решение владельца)
 
