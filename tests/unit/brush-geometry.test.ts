@@ -69,9 +69,9 @@ describe('deterministic distance-based spray', () => {
     expect([...sprayParticles(JSON.parse(JSON.stringify(stroke)))]).toEqual(particles);
     expect([...sprayParticles({ ...stroke, id: id.toUpperCase() })]).toEqual(particles);
     expect([...sprayParticles({ ...stroke, id: '00000000-0000-4000-8000-000000000001' })]).not.toEqual(particles);
-    expect(particles[0]!.x).toBeCloseTo(-12.880440792259167, 10);
-    expect(particles[0]!.y).toBeCloseTo(-3.9730019332149635, 10);
-    expect(particles[0]!.radius).toBe(1.25);
+    expect(particles[0]!.x).toBeCloseTo(-13.535378459662176, 10);
+    expect(particles[0]!.y).toBeCloseTo(-4.175018980666572, 10);
+    expect(particles[0]!.radius).toBe(0.5);
   });
 
   it('does not depend on pointer event density, duplicates or absolute world position', () => {
@@ -81,10 +81,12 @@ describe('deterministic distance-based spray', () => {
       .toEqual([...sprayParticles(stroke)]);
   });
 
-  it.each([1, 6, 64])('keeps single-click particles within width %s, including particle radii', (width) => {
+  it.each([1, 6, 8, 10, 32, 64])('keeps fine single-click particles within width %s, including particle radii', (width) => {
     const particles = [...sprayParticles({ id, width, points: [[0, 0]] })];
     expect(particles.length).toBeGreaterThan(0);
     for (const particle of particles) {
+      expect(particle.radius).toBeGreaterThan(0);
+      expect(particle.radius * 2).toBeLessThanOrEqual(1);
       expect(Math.hypot(particle.x, particle.y) + particle.radius).toBeLessThanOrEqual(width / 2 + 1e-10);
     }
   });

@@ -93,7 +93,8 @@ function* sprayCenters(points: readonly Point[], width: number): Generator<Point
 export function* sprayParticles(stroke: Pick<StrokeDraft, 'id' | 'points' | 'width'>): Generator<Particle> {
   const random = seededRandom(stroke.id);
   const count = Math.min(MAX_SPRAY_PARTICLES_PER_STAMP, Math.max(6, Math.ceil(stroke.width * 0.75)));
-  const radius = Math.max(0.35, Math.min(1.25, stroke.width / 20));
+  // At 100% zoom, even the widest spray has particles no larger than 1 CSS px.
+  const radius = Math.max(0.35, Math.min(0.5, stroke.width / 20));
   const spread = Math.max(0, stroke.width / 2 - radius);
   for (const [x, y] of sprayCenters(stroke.points, stroke.width)) {
     for (let i = 0; i < count; i++) {

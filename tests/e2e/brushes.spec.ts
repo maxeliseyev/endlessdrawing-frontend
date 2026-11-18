@@ -112,9 +112,14 @@ test('effect renderer composites overlap once, preserves alpha, and scales the s
         let covered = 0;
         let correctAlpha = true;
         for (let i = 0; i < solid.length; i += 4) {
-          if (solid[i] === 0) {
+          // One-pixel spray grains can have no fully covered pixels. Derive
+          // coverage from the opaque raster, including antialiased edges.
+          if (solid[i]! < 204) {
             covered++;
-            correctAlpha &&= half[i]! >= 127 && half[i]! <= 128 && overlap[i]! < half[i]!;
+            const expectedHalf = (255 + solid[i]!) / 2;
+            const expectedOverlap = expectedHalf * expectedHalf / 255;
+            correctAlpha &&= Math.abs(half[i]! - expectedHalf) <= 2 &&
+              Math.abs(overlap[i]! - expectedOverlap) <= 2 && overlap[i]! < half[i]!;
           }
           correctAlpha &&= half[i + 3] === 255 && half[i]! >= 127;
         }
