@@ -37,6 +37,7 @@
 - [x] CSS/world координаты, случайная начальная камера ±250, sessionStorage, DPR/resize.
 - [x] Локальный preview, одиночный клик, round/square/chisel/spray, цвет/толщина/opacity, отмена жестов; формы доступны в EN/RU и восстанавливаются из Storage.
 - [x] По решению владельца 18.11.2026 диаметр частиц спрея ограничен 1 world unit (1 CSS px при 100%). Применяется ко всем существующим и новым штрихам без legacy-ветки; ширина распыления и число частиц прежние. Контракт — [brushes.md](brushes.md).
+- [x] Мелкий спрей опубликован через [CI 44325301431](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44325301431), frontend `1e6eef2` / backend `3bdb988`. Внешние HTTPS, хеши assets, защита admin API и WSS v3/v2/JSON проверены; [отчёт и точка отката](transport-release.md#обновление-спрея-18112026).
 - [x] Компактная контекстная палитра, клавиатура, focus, границы окна, localStorage настроек.
 - [x] Рука, Space+drag, средняя кнопка, двухосевой wheel без зума.
 - [x] Прототипные локальные ластик/undo — только ephemeral drafts этой страницы, не серверная авторизация/undo.

@@ -19,3 +19,12 @@
 - Серверный Compose обновлён только двумя переменными протокола, с проверкой SHA-256 исходной версии. Runtime credentials, DB schema и правила доступа не менялись; штатный preflight прошёл. Предыдущий образ сохранён: `endlessdrawing-app:4103b38d946b4ea53de29a6b6aeedbe5dd0aaa59-44298629102-1`.
 - Внешний HTTPS: `/readyz` → 200 ready; public/admin HTML → 200; хеши всех JS/CSS, указанных обоими entry, совпали с локальной сборкой; admin session без cookie → 401.
 - Read-only WSS: v3/v2/explicit JSON и legacy JSON приняты. Одна и та же область: 34 штриха / 4757 точек; JSON 192317 bytes, MessagePack 94883 bytes. Два повторных v3 snapshot: по 1910 bytes manifest/control, **0 geometry chunks / 0 переданных точек**. Штрихи не создавались и не удалялись. Это размеры application payload конкретной области без TLS/TCP/WS overhead, не универсальный коэффициент и не browser latency benchmark.
+
+## Обновление спрея, 18.11.2026
+
+Максимальный диаметр частиц уменьшен до 1 world unit (1 CSS px при 100%) для всех штрихов по решению владельца, без legacy-ветки. [Actions 44325301431](https://github.com/maxeliseyev/endlessdrawing-backend/actions/runs/44325301431) завершился успешно: verify/build/deploy, реальные HTTPS admin/public browser, image/backup/Caddy gates.
+
+- Frontend кода: `1e6eef298a1bdc775fe62063bd4ee972290c0971`; backend прежний `3bdb9887e7e2c8bf93e3542610f6c1a739a7a19b`. Локально прошли check/build, 213 unit и 205 E2E в Chromium/Firefox/WebKit (2 CDP-only skips).
+- Активный образ: `endlessdrawing-app:3bdb9887e7e2c8bf93e3542610f6c1a739a7a19b-44325301431-1`; сохранённый образ отката: `endlessdrawing-app:3bdb9887e7e2c8bf93e3542610f6c1a739a7a19b-44320255728-1`.
+- Внешний HTTPS: readyz 200 ready, public/admin HTML и все указанные ими JS/CSS сверены по хешам с локальной сборкой; admin session без cookie — 401. WSS v3/v2/explicit JSON/legacy JSON работают. В текущей выборке 23 штриха / 1996 точек: два повторных v3 snapshot передали по 1492 bytes control и 0 geometry. Это другая область, не сравнение производительности с предыдущей выборкой; проверка была read-only.
+- Следующий выбранный владельцем этап — [M3: видимая область раньше запаса](transport-v2-design.md#6-m3-сначала-видимая-область). План зафиксирован отдельно; M3 в этот образ не входит.
