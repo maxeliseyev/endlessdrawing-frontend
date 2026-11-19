@@ -12,13 +12,15 @@ export class AdminScene {
   strokes = new Map<string, Stroke>();
   phase: ScenePhase = 'loading';
   subscriptionId = '';
+  /** Bumped on every change of the drawn set: the view re-sorts only then, not per frame. */
+  revision = 0;
   private staging: Map<string, Stroke> | undefined;
   private deleted = new Set<string>();
   private stagedPoints = 0;
   private livePoints = 0;
 
   subscribe(id: string, preserveCache = false): void {
-    this.subscriptionId = id;
+    this.subscriptionId = id; this.revision++;
     if (!preserveCache) this.clear();
     else { this.staging = undefined; this.stagedPoints = 0; this.phase = 'loading'; }
   }
@@ -30,10 +32,12 @@ export class AdminScene {
     for (const stroke of strokes) this.put(stroke);
   }
   clear(): void {
+    this.revision++;
     this.strokes = new Map(); this.staging = undefined; this.deleted.clear();
     this.stagedPoints = this.livePoints = 0; this.phase = 'loading';
   }
   remove(ids: Iterable<string>): void {
+    this.revision++;
     for (const id of ids) {
       this.deleted.add(id);
       if (this.deleted.size > MAX_SCENE_STROKES) throw new SceneLimitError();
@@ -46,6 +50,7 @@ export class AdminScene {
   }
   private put(stroke: Stroke): void {
     if (this.deleted.has(stroke.id)) return;
+    this.revision++;
     const target = this.staging ?? this.strokes;
     const points = stroke.points.length - (target.get(stroke.id)?.points.length ?? 0);
     const total = (this.staging ? this.stagedPoints : this.livePoints) + points;
@@ -70,7 +75,7 @@ export class AdminScene {
       for (const stroke of message.strokes) this.put(parseStroke(stroke));
     } else if (type === 'viewport.snapshot.end') {
       if (!this.staging) throw new ProtocolError();
-      this.strokes = this.staging; this.livePoints = this.stagedPoints;
+      this.strokes = this.staging; this.livePoints = this.stagedPoints; this.revision++;
       this.staging = undefined; this.stagedPoints = 0; this.phase = 'ready';
     } else if (type === 'stroke.created') {
       if (!this.staging && this.phase !== 'ready') throw new ProtocolError();
