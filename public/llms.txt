@@ -12,5 +12,6 @@ The private administration area is not part of the public site and is excluded f
 
 - [About](https://endlessdrawing.com/about): Endless Drawing for iPad, Apple Pencil, navigation, and drawing tools.
 - [Privacy policy](https://endlessdrawing.com/privacy): public drawings, anonymous ownership, device storage, and data handling.
+- [Terms of Use](https://endlessdrawing.com/terms): public canvas rules, zero tolerance for objectionable content, reporting, blocking, and moderation within 24 hours.
 
 These are separate information pages for the iPad app. The main page remains the shared canvas.

@@ -64,7 +64,8 @@ test('opens directly on a white canvas: brand metadata, no welcome/banner/panel'
   expect(xml).toContain('<loc>https://endlessdrawing.com/</loc>');
   expect(xml).toContain('<loc>https://endlessdrawing.com/about</loc>');
   expect(xml).toContain('<loc>https://endlessdrawing.com/privacy</loc>');
-  expect(xml.match(/<loc>/g)).toHaveLength(3);
+  expect(xml).toContain('<loc>https://endlessdrawing.com/terms</loc>');
+  expect(xml.match(/<loc>/g)).toHaveLength(4);
   expect(xml).not.toContain('admin');
   const llms = await page.request.get('/llms.txt');
   expect(llms.ok()).toBe(true);
