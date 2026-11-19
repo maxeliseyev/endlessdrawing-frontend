@@ -1,5 +1,5 @@
-import { clampWorld, pan, panScreen, screenToWorld, subscriptionBounds, visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport } from '../camera';
-import type { Point, Stroke } from '../model';
+import { clampWorld, intersects, needsResubscribe, pan, panScreen, screenToWorld, subscriptionBounds, visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport } from '../camera';
+import { strokeExtent, type Point, type Stroke } from '../model';
 import { drawStroke, hitTest, Renderer } from '../renderer';
 import { ReadOnlyWorld, type WorldStatus } from './world';
 
@@ -20,6 +20,9 @@ export class AdminView {
   private locked = false;
   private disposed = false;
   private dprQuery: MediaQueryList | undefined;
+  /** Strokes by seq, rebuilt only when the scene revision changes. */
+  private ordered: Stroke[] = [];
+  private orderedRevision = -1;
   status: WorldStatus = 'connecting';
 
   constructor(host: HTMLElement, label: string,
@@ -33,8 +36,9 @@ export class AdminView {
     this.world = new ReadOnlyWorld((status) => {
       if (this.disposed) return;
       this.status = status;
-      if (status !== 'ready') this.selected.clear();
-      else for (const id of this.selected) if (!this.world.scene.strokes.has(id)) this.selected.delete(id);
+      // Keep the selection across pan/zoom reloads; drop only what the fresh snapshot no longer has.
+      if (status === 'ready') { for (const id of this.selected) if (!this.world.scene.strokes.has(id)) this.selected.delete(id); }
+      else if (status !== 'loading') this.selected.clear();
       this.notify(); this.renderer.invalidate();
     });
     this.installInput();
@@ -78,17 +82,28 @@ export class AdminView {
     this.dprQuery = matchMedia(`(resolution: ${devicePixelRatio || 1}dppx)`);
     this.dprQuery.addEventListener('change', this.onDpr, { once: true });
   }
+  private strokes(): Stroke[] {
+    const scene = this.world.scene;
+    if (this.orderedRevision !== scene.revision) {
+      this.ordered = [...scene.strokes.values()].sort((a, b) => a.seq - b.seq);
+      this.orderedRevision = scene.revision;
+    }
+    return this.ordered;
+  }
   private draw(): void {
-    const strokes = [...this.world.scene.strokes.values()].sort((a, b) => a.seq - b.seq);
-    for (const stroke of strokes) drawStroke(this.renderer.context, stroke, this.camera, this.viewport);
+    // Only strokes on screen are drawn (Path2D is cached per stroke by the shared renderer).
+    const visible = visibleBounds(this.camera, this.viewport);
+    for (const stroke of this.strokes()) {
+      if (intersects(strokeExtent(stroke), visible)) drawStroke(this.renderer.context, stroke, this.camera, this.viewport);
+    }
     const ctx = this.renderer.context;
     ctx.save(); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
     for (const id of this.selected) {
       const stroke = this.world.scene.strokes.get(id);
       if (!stroke) continue;
-      const b = bounds(stroke);
-      const [x0, y0] = worldToScreen([b.minX, b.minY], this.camera, this.viewport);
-      const [x1, y1] = worldToScreen([b.maxX, b.maxY], this.camera, this.viewport);
+      const b = strokeExtent(stroke);
+      const [x0, y0] = worldToScreen([b.min_x, b.min_y], this.camera, this.viewport);
+      const [x1, y1] = worldToScreen([b.max_x, b.max_y], this.camera, this.viewport);
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     }
     ctx.restore();
@@ -105,8 +120,11 @@ export class AdminView {
   }
   private applyCamera(next: Camera): void {
     this.camera = next;
-    this.selected.clear(); this.notify(); this.renderer.invalidate();
-    this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
+    this.renderer.invalidate();
+    // A new snapshot only when the prefetched area runs out, not on every pointer move.
+    if (needsResubscribe(this.world.area, this.camera, this.viewport)) {
+      this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
+    }
     this.onCamera?.(this.camera);
   }
   zoomIn(): void { this.zoomBy(1.25); }
@@ -123,12 +141,16 @@ export class AdminView {
   private toggle(point: Point): void {
     if (this.locked || this.status !== 'ready') return;
     const world = screenToWorld(point, this.camera, this.viewport);
-    const strokes = [...this.world.scene.strokes.values()].sort((a, b) => b.seq - a.seq);
-    const stroke = strokes.find((stroke) => {
-      const b = bounds(stroke);
-      return world[0] >= b.minX && world[0] <= b.maxX && world[1] >= b.minY && world[1] <= b.maxY &&
-        hitTest(this.renderer.context, stroke, world, this.camera, this.viewport);
-    });
+    const strokes = this.strokes();
+    let stroke: Stroke | undefined;
+    // Topmost first; the extent check (cached) skips nearly all hit tests.
+    for (let index = strokes.length - 1; index >= 0 && !stroke; index--) {
+      const candidate = strokes[index]!;
+      const b = strokeExtent(candidate);
+      const slop = 5 / zoomOf(this.camera);
+      if (world[0] >= b.min_x - slop && world[0] <= b.max_x + slop && world[1] >= b.min_y - slop && world[1] <= b.max_y + slop &&
+        hitTest(this.renderer.context, candidate, world, this.camera, this.viewport)) stroke = candidate;
+    }
     if (!stroke) return;
     if (this.selected.has(stroke.id)) this.selected.delete(stroke.id);
     else if (this.selected.size >= 100) { this.limit(); return; }
@@ -189,12 +211,4 @@ export class AdminView {
     window.addEventListener('keyup', (event) => { if (event.code === 'Space') { this.space = false; this.cursor(); } }, { signal });
     window.addEventListener('blur', () => { this.space = false; this.gesture = undefined; this.cursor(); }, { signal });
   }
-}
-
-function bounds(stroke: Stroke) {
-  const pad = stroke.width / Math.SQRT2 + 5;
-  return { minX: Math.min(...stroke.points.map((p) => p[0])) - pad,
-    minY: Math.min(...stroke.points.map((p) => p[1])) - pad,
-    maxX: Math.max(...stroke.points.map((p) => p[0])) + pad,
-    maxY: Math.max(...stroke.points.map((p) => p[1])) + pad };
 }

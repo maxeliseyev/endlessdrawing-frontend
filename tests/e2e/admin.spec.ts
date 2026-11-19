@@ -240,3 +240,21 @@ test('the public entry never loads admin code, checks admin session, or exposes 
   await page.mouse.click(500, 300, { button: 'right' });
   expect(await page.getByRole('dialog').innerText()).not.toMatch(/admin|moderation|администрат|модерац/i);
 });
+
+test('panning within the prefetched area neither resubscribes nor drops the selection', async ({ page }) => {
+  const state = await adminServer(page, true);
+  await page.goto('/admin/'); await selectStroke(page);
+  const selected = page.locator('.selection-list code');
+  await expect(selected).toHaveCount(1);
+  const subscriptions = () => state.messages.filter((m) => String(m.type).startsWith('viewport.subscribe')).length;
+  const before = subscriptions();
+  for (let i = 0; i < 20; i++) await page.mouse.wheel(10, 6);
+  await page.waitForTimeout(700); // longer than the 260 ms subscription debounce
+  expect(subscriptions()).toBe(before);
+  await expect(selected).toHaveCount(1);
+  // Far enough to leave the prefetch margin: a new snapshot, and the selection survives it.
+  for (let i = 0; i < 40; i++) await page.mouse.wheel(60, 0);
+  await expect.poll(subscriptions).toBeGreaterThan(before);
+  await expect(page.locator('.world-status')).toHaveText('Shared world loaded');
+  await expect(selected).toHaveCount(1);
+});

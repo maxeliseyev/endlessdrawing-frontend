@@ -45,6 +45,8 @@ export class ReadOnlyWorld {
     socket?.close(1000);
     this.scene.clear();
   }
+  /** Currently subscribed area (for needsResubscribe), undefined before the first subscription. */
+  get area(): Bounds | undefined { return this.bounds; }
   refresh(): void {
     if (!this.stopped) this.subscribe();
   }
