@@ -61,6 +61,52 @@ export function parseHideResult(value: unknown, expected: HideOperation): HideRe
   return { operation_id: expected.operation_id, hidden, already_hidden: already };
 }
 
+export type Decision = 'hide' | 'dismiss' | 'ban';
+export interface DismissResult { operation_id: string; restored: string[]; dismissed_reports: number }
+export interface BanResult { operation_id: string; banned_authors: number; hidden: string[] }
+export const REPORT_REASONS = ['sexual', 'violence', 'hate', 'illegal', 'spam', 'other'] as const;
+export type ReportReason = typeof REPORT_REASONS[number];
+export interface ReportItem {
+  stroke_id: string; reports: number; reporters: number; reasons: ReportReason[]; block_requests: number;
+  first_at: string; last_at: string; held: boolean; visible: boolean; x: number; y: number;
+}
+export interface ReportQueue { open_reports: number; items: ReportItem[] }
+
+function count(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new ProtocolError();
+  return value as number;
+}
+
+export function parseDismissResult(value: unknown, expected: HideOperation): DismissResult {
+  const v = object(value);
+  if (uuid(v.operation_id) !== expected.operation_id || !Array.isArray(v.restored)) throw new ProtocolError();
+  const restored = v.restored.map(uuid);
+  if (restored.some((id) => !expected.stroke_ids.includes(id))) throw new ProtocolError();
+  return { operation_id: expected.operation_id, restored, dismissed_reports: count(v.dismissed_reports) };
+}
+
+export function parseBanResult(value: unknown, expected: HideOperation): BanResult {
+  const v = object(value);
+  if (uuid(v.operation_id) !== expected.operation_id || !Array.isArray(v.hidden) || v.hidden.length > 20_000) throw new ProtocolError();
+  return { operation_id: expected.operation_id, banned_authors: count(v.banned_authors), hidden: v.hidden.map(uuid) };
+}
+
+export function parseReportQueue(value: unknown): ReportQueue {
+  const v = object(value);
+  if (!Array.isArray(v.items) || v.items.length > 200) throw new ProtocolError();
+  const items = v.items.map((raw): ReportItem => {
+    const item = object(raw);
+    if (!Array.isArray(item.reasons) || !item.reasons.every((r) => (REPORT_REASONS as readonly unknown[]).includes(r)) ||
+        typeof item.held !== 'boolean' || typeof item.visible !== 'boolean' ||
+        !Number.isFinite(item.x) || !Number.isFinite(item.y)) throw new ProtocolError();
+    return { stroke_id: uuid(item.stroke_id), reports: count(item.reports), reporters: count(item.reporters),
+      reasons: item.reasons as ReportReason[], block_requests: count(item.block_requests),
+      first_at: timestamp(item.first_at), last_at: timestamp(item.last_at), held: item.held, visible: item.visible,
+      x: item.x as number, y: item.y as number };
+  });
+  return { open_reports: count(v.open_reports), items };
+}
+
 export function validReason(reason: string): boolean {
   const normalized = reason.trim();
   return normalized.length > 0 && [...normalized].length <= 1000 && new TextEncoder().encode(normalized).byteLength <= 4000;

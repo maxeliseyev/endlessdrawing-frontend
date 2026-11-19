@@ -2,7 +2,7 @@ import './style.css';
 import QRCode from 'qrcode';
 import { resolveLocale } from '../i18n';
 import { AdminApi, ApiError, uncertainOutcome } from './api';
-import { makeHideOperation, ProtocolError, validReason, type AdminSession, type HideOperation } from './contracts';
+import { makeHideOperation, ProtocolError, validReason, type AdminSession, type Decision, type HideOperation, type ReportQueue } from './contracts';
 import { adminTranslations } from './i18n';
 import { AdminView } from './view';
 import type { WorldStatus } from './world';
@@ -312,6 +312,8 @@ function enterWorld(value: AdminSession): void {
     <header><h1>${t.moderation}</h1><span class="account"></span><div class="toolbar"></div></header>
     <p class="world-status" role="status"></p>
     <div class="workspace"><div class="world-host"></div><aside>
+      <section class="reports" aria-labelledby="reports-title"><div class="reports-head"><h2 id="reports-title" class="reports-title"></h2></div>
+        <ul class="reports-list"></ul></section>
       <h2 class="selection-count"></h2><p class="hint">${t.selectionHint}</p>
       <div class="selection-actions"></div><ul class="selection-list"></ul><div class="operation-panel"></div>
     </aside></div>
@@ -333,8 +335,58 @@ function enterWorld(value: AdminSession): void {
   const dialog = required<HTMLDialogElement>(layout, 'dialog');
   const reason = required<HTMLTextAreaElement>(dialog, '[name=reason]');
   const dialogError = required<HTMLElement>(dialog, '.form-error');
-  let pending: { payload: HideOperation; state: 'sending' | 'unknown' | 'rejected'; error?: string } | undefined;
+  let pending: { kind: Decision; payload: HideOperation; state: 'sending' | 'unknown' | 'rejected'; error?: string } | undefined;
   let confirmedIds: readonly string[] = [];
+  // What the open dialog decides: the canvas selection (hide) or one reported stroke (any decision).
+  let target: { kind: Decision; fromSelection: boolean } = { kind: 'hide', fromSelection: true };
+  const reportsTitle = required<HTMLElement>(layout, '.reports-title');
+  const reportsList = required<HTMLElement>(layout, '.reports-list');
+  const reportsHead = required<HTMLElement>(layout, '.reports-head');
+  let queue: ReportQueue | undefined;
+  function openDialog(kind: Decision, ids: readonly string[], fromSelection: boolean): void {
+    if (pending || !view) return;
+    target = { kind, fromSelection }; confirmedIds = [...ids]; reason.value = ''; dialogError.textContent = '';
+    required<HTMLElement>(dialog, '#confirmation-title').textContent = t.decisionTitle[kind] ?? '';
+    required<HTMLElement>(dialog, 'button[type=submit]').textContent = t.decisionConfirm[kind] ?? '';
+    const list = required<HTMLElement>(dialog, '.confirmation-ids'); list.replaceChildren();
+    for (const id of confirmedIds) { const li = document.createElement('li'); li.textContent = id; list.append(li); }
+    view.lock(true); dialog.showModal(); reason.focus();
+  }
+  function renderReports(): void {
+    reportsList.replaceChildren();
+    if (!queue) { reportsTitle.textContent = t.reports(0); return; }
+    reportsTitle.textContent = t.reports(queue.open_reports);
+    if (!queue.items.length) { const li = document.createElement('li'); li.textContent = t.reportsEmpty; reportsList.append(li); }
+    for (const item of queue.items) {
+      const li = document.createElement('li'); li.className = item.held ? 'report held' : 'report';
+      const reasons = document.createElement('p'); reasons.className = 'report-reasons';
+      reasons.textContent = item.reasons.map((reason) => t.reasonNames[reason] ?? reason).join(', ');
+      const meta = document.createElement('p'); meta.className = 'hint';
+      meta.textContent = `${t.reportMeta(item.reports, item.reporters, item.block_requests)} · ${new Date(item.last_at).toLocaleString()}`;
+      li.append(reasons, meta);
+      if (item.held || !item.visible) { const state = document.createElement('p'); state.className = 'report-state'; state.textContent = item.held ? t.reportHeld : t.reportGone; li.append(state); }
+      const actions = document.createElement('div'); actions.className = 'report-actions';
+      actions.append(
+        button(t.reportShow, () => view?.jumpTo(item.x, item.y)),
+        button(t.reportHide, () => openDialog('hide', [item.stroke_id], false)),
+        button(t.reportDismiss, () => openDialog('dismiss', [item.stroke_id], false)),
+        button(t.reportBan, () => openDialog('ban', [item.stroke_id], false)),
+      );
+      for (const action of actions.querySelectorAll('button')) action.disabled = !!pending;
+      li.append(actions); reportsList.append(li);
+    }
+  }
+  async function loadReports(): Promise<void> {
+    try { const next = await api.reports(lifetime.signal); if (current === epoch) { queue = next; renderReports(); } }
+    catch (error) {
+      if (current !== epoch) return;
+      if (error instanceof ApiError && error.status === 401) { showAuth('login', t.sessionExpired); return; }
+      reportsTitle.textContent = t.reportsFailed;
+    }
+  }
+  reportsHead.append(button(t.reportsRefresh, () => { void loadReports(); }));
+  const reportsTimer = setInterval(() => { if (current !== epoch) clearInterval(reportsTimer); else if (!pending) void loadReports(); }, 60_000);
+  void loadReports();
   let mode: 'select' | 'hand' = 'select';
   const select = button(t.select, () => { mode = 'select'; view?.setMode(mode); updateModes(); });
   const hand = button(t.hand, () => { mode = 'hand'; view?.setMode(mode); updateModes(); });
@@ -355,10 +407,7 @@ function enterWorld(value: AdminSession): void {
   const clear = button(t.clear, () => view?.clear());
   const review = button(t.hide, () => {
     if (!view || view.status !== 'ready' || pending || !view.selection.length) return;
-    confirmedIds = [...view.selection]; reason.value = ''; dialogError.textContent = '';
-    const ids = required<HTMLElement>(dialog, '.confirmation-ids'); ids.replaceChildren();
-    for (const id of confirmedIds) { const li = document.createElement('li'); li.textContent = id; ids.append(li); }
-    view.lock(true); dialog.showModal(); reason.focus();
+    openDialog('hide', view.selection, true);
   });
   required(layout, '.selection-actions').append(clear, review);
   required<HTMLButtonElement>(dialog, '.cancel').onclick = () => dialog.close();
@@ -368,12 +417,12 @@ function enterWorld(value: AdminSession): void {
   });
   required<HTMLFormElement>(dialog, 'form').addEventListener('submit', (event) => {
     event.preventDefault();
-    if (!view || pending || view.status !== 'ready' || view.selection.join() !== confirmedIds.join()) {
+    if (!view || pending || (target.fromSelection && (view.status !== 'ready' || view.selection.join() !== confirmedIds.join()))) {
       dialogError.textContent = t.selectionChanged; return;
     }
     if (!validReason(reason.value)) { dialogError.textContent = t.invalidReason; return; }
-    pending = { payload: makeHideOperation(confirmedIds, reason.value), state: 'sending' };
-    dialog.close(); void execute('hide');
+    pending = { kind: target.kind, payload: makeHideOperation(confirmedIds, reason.value), state: 'sending' };
+    dialog.close(); void execute('send');
   });
   function update(ids: readonly string[], state: WorldStatus): void {
     selectionCount.textContent = t.selection(ids.length);
@@ -399,24 +448,37 @@ function enterWorld(value: AdminSession): void {
     if (pending.error && pending.state === 'unknown') { const error = document.createElement('p'); error.textContent = pending.error; panel.append(error); }
     if (pending.state !== 'sending') {
       panel.append(button(t.checkOperation, () => { void execute('check'); }));
-      panel.append(button(t.retryOperation, () => { void execute('hide'); }));
+      panel.append(button(t.retryOperation, () => { void execute('send'); }));
       if (pending.state === 'rejected') panel.append(button(t.editSelection, () => {
         pending = undefined; operationPanel(); if (view) update(view.selection, view.status);
       }));
     }
   }
-  async function execute(kind: 'hide' | 'check'): Promise<void> {
+  async function execute(kind: 'send' | 'check'): Promise<void> {
     if (!pending || !session || current !== epoch) return;
     const operation = pending.payload;
+    const decision = pending.kind;
     const wasUnknown = pending.state === 'unknown';
     pending.state = 'sending'; pending.error = undefined;
-    operationPanel(); if (view) update(view.selection, view.status);
+    operationPanel(); renderReports(); if (view) update(view.selection, view.status);
     try {
-      const result = kind === 'hide' ? await api.hide(operation, session.csrf_token, lifetime.signal)
-        : await api.operation(operation, lifetime.signal);
+      const csrf = session.csrf_token;
+      const result = kind === 'check' ? await api.decision(decision, operation, lifetime.signal)
+        : decision === 'hide' ? await api.hide(operation, csrf, lifetime.signal)
+          : decision === 'dismiss' ? await api.dismiss(operation, csrf, lifetime.signal)
+            : await api.ban(operation, csrf, lifetime.signal);
       if (current !== epoch) return;
-      pending = undefined; view?.remove([...result.hidden, ...result.already_hidden]);
-      status(t.success(result.hidden.length, result.already_hidden.length));
+      pending = undefined;
+      if ('already_hidden' in result) {
+        view?.remove([...result.hidden, ...result.already_hidden]);
+        status(t.success(result.hidden.length, result.already_hidden.length));
+      } else if ('restored' in result) {
+        status(t.dismissed(result.dismissed_reports, result.restored.length));
+      } else {
+        view?.remove(result.hidden);
+        status(t.banned(result.banned_authors, result.hidden.length));
+      }
+      void loadReports();
       void refreshSession(current);
     } catch (error) {
       if (current !== epoch) return;
@@ -425,7 +487,7 @@ function enterWorld(value: AdminSession): void {
       pending.state = wasUnknown || kind === 'check' || uncertainOutcome(error) ? 'unknown' : 'rejected';
       pending.error = kind === 'check' && error instanceof ApiError && error.status === 404 ? t.operationMissing : errorText(error);
     } finally {
-      if (current === epoch) { operationPanel(); if (view) update(view.selection, view.status); }
+      if (current === epoch) { operationPanel(); renderReports(); if (view) update(view.selection, view.status); }
     }
   }
   try {

@@ -52,7 +52,10 @@ export async function adminServer(page: Page, authenticated = false) {
     messages: [] as Record<string, unknown>[],
     sockets: [] as { route: WebSocketRoute; subscription: string }[],
     strokes: new Map<string, WireStroke>(TEST_STROKES.map((stroke) => [stroke.id, stroke])),
-    operations: new Map<string, { operation_id: string; hidden: string[]; already_hidden: string[] }>(),
+    operations: new Map<string, Record<string, unknown>>(),
+    /** Open reported strokes (backend aggregates per stroke). Empty unless a test adds some. */
+    reported: [] as { stroke_id: string; held: boolean; reasons: string[] }[],
+    banned: 0,
     enrollmentCount: 0, credentialIds: [] as string[], challenge: 'AQIDBA',
   };
   const session = () => ({ authenticated: true, account: { id: SECOND_ID, login: state.accountLogin }, csrf_token: 'test-full-csrf',
@@ -114,6 +117,37 @@ export async function adminServer(page: Page, authenticated = false) {
       const result = state.operations.get(path.slice('operations/'.length));
       await reply(result ?? fail('operation_not_found'), result ? 200 : 404); return;
     }
+    if (path === 'reports') {
+      const items = state.reported.map((item) => {
+        const stroke = TEST_STROKES.find((s) => s.id === item.stroke_id)!;
+        return { stroke_id: item.stroke_id, reports: 5, reporters: 5, reasons: item.reasons, block_requests: 4,
+          first_at: '2026-11-19T09:00:00Z', last_at: '2026-11-19T09:05:00Z', held: item.held, visible: !item.held && state.strokes.has(item.stroke_id),
+          x: 0, y: stroke.points[0]![1] };
+      });
+      await reply({ open_reports: items.length * 5, items }); return;
+    }
+    if (path === 'reports/dismiss' || path === 'bans') {
+      expect(request.headers()['x-csrf-token']).toBe('test-full-csrf');
+      const id = body!.operation_id as string; const ids = body!.stroke_ids as string[];
+      let result = state.operations.get(id);
+      if (!result) {
+        if (path === 'reports/dismiss') {
+          const restored = ids.filter((stroke) => state.reported.some((item) => item.stroke_id === stroke && item.held));
+          result = { operation_id: id, restored, dismissed_reports: 5 * ids.length };
+        } else {
+          // Test fixture: both strokes belong to one author.
+          const hidden = [...state.strokes.keys()];
+          for (const stroke of hidden) {
+            const seq = state.strokes.get(stroke)!.seq; state.strokes.delete(stroke);
+            for (const socket of state.sockets) if (socket.subscription) socket.route.send(binary({ type: 'stroke.deleted', subscription_id: socket.subscription, stroke_id: stroke, seq }));
+          }
+          state.banned++; result = { operation_id: id, banned_authors: 1, hidden };
+        }
+        state.reported = state.reported.filter((item) => !ids.includes(item.stroke_id));
+        state.operations.set(id, result);
+      }
+      await reply(result); return;
+    }
     if (path === 'strokes/hide') {
       expect(request.headers()['x-csrf-token']).toBe('test-full-csrf');
       const mode = state.hideMode;
@@ -126,8 +160,9 @@ export async function adminServer(page: Page, authenticated = false) {
       let result = state.operations.get(id);
       if (!result) {
         const ids = body!.stroke_ids as string[];
-        result = { operation_id: id, hidden: ids.filter((id) => state.strokes.has(id)), already_hidden: ids.filter((id) => !state.strokes.has(id)) };
-        for (const id of result.hidden) {
+        const hidden = ids.filter((id) => state.strokes.has(id));
+        result = { operation_id: id, hidden, already_hidden: ids.filter((id) => !state.strokes.has(id)) };
+        for (const id of hidden) {
           const stroke = state.strokes.get(id)!; state.strokes.delete(id);
           for (const socket of state.sockets) if (socket.subscription) socket.route.send(binary({ type: 'stroke.deleted', subscription_id: socket.subscription, stroke_id: id, seq: stroke.seq }));
         }

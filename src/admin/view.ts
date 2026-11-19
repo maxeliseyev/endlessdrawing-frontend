@@ -74,7 +74,10 @@ export class AdminView {
     const rect = this.canvas.getBoundingClientRect();
     this.viewport = { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
     this.renderer.resize(this.viewport, devicePixelRatio || 1);
-    this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
+    // Layout changes (panels, scrollbars) resize the canvas often; reload only if the area no longer covers it.
+    if (needsResubscribe(this.world.area, this.camera, this.viewport)) {
+      this.world.setBounds(subscriptionBounds(this.camera, this.viewport), visibleBounds(this.camera, this.viewport));
+    }
   }
   private readonly onDpr = () => { this.resize(); this.watchDpr(); };
   private watchDpr(): void {

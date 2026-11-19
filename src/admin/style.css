@@ -39,6 +39,16 @@ header h1 { margin: 0; font-size: 16px; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; outline-offset: -2px !important; }
 aside { overflow: auto; border-left: 1px solid #ddd; background: #fff; padding: 16px; }
 aside h2 { margin: 0; }
+.reports { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #eee; }
+.reports-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reports-head button { min-height: 28px; padding: 0 8px; font-size: 12px; }
+.reports-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 40vh; overflow: auto; }
+.reports-list > li { font-size: 12px; padding: 8px 0; border-top: 1px solid #f0f0f0; }
+.reports-list .report.held { background: #fff8f2; }
+.report-reasons { margin: 0; font-weight: 600; }
+.report-state { margin: 2px 0 0; color: #b45309; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.report-actions button { min-height: 26px; padding: 0 8px; font-size: 12px; }
 .selection-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 ul { padding: 0; list-style: none; }
 .selection-list { max-height: 36vh; overflow: auto; }
