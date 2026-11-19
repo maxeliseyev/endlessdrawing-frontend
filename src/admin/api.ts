@@ -1,6 +1,6 @@
 import {
-  object, parseCeremony, parseEnrollment, parseHideResult, parseLoginOptions, parseSession,
-  ProtocolError, type HideOperation,
+  object, parseBanResult, parseCeremony, parseDismissResult, parseEnrollment, parseHideResult, parseLoginOptions,
+  parseReportQueue, parseSession, ProtocolError, type Decision, type HideOperation,
 } from './contracts';
 
 export class ApiError extends Error {
@@ -110,5 +110,17 @@ export class AdminApi {
   async operation(operation: HideOperation, signal?: AbortSignal) {
     // The ID came from makeHideOperation(), never from an arbitrary path input.
     return parseHideResult(await this.request(`operations/${operation.operation_id}`, undefined, undefined, signal), operation);
+  }
+  async reports(signal?: AbortSignal) { return parseReportQueue(await this.request('reports', undefined, undefined, signal)); }
+  async dismiss(operation: HideOperation, csrf: string, signal?: AbortSignal) {
+    return parseDismissResult(await this.request('reports/dismiss', operation, csrf, signal), operation);
+  }
+  async ban(operation: HideOperation, csrf: string, signal?: AbortSignal) {
+    return parseBanResult(await this.request('bans', operation, csrf, signal), operation);
+  }
+  /** Result of any decision by its operation ID (hide, dismiss or ban share the operation log). */
+  async decision(kind: Decision, operation: HideOperation, signal?: AbortSignal) {
+    const raw = await this.request(`operations/${operation.operation_id}`, undefined, undefined, signal);
+    return kind === 'hide' ? parseHideResult(raw, operation) : kind === 'dismiss' ? parseDismissResult(raw, operation) : parseBanResult(raw, operation);
   }
 }

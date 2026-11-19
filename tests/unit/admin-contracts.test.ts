@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeHideOperation, parseCeremony, parseEnrollment, parseHideResult, parseLoginOptions, parseSession, ProtocolError, validReason } from '../../src/admin/contracts';
+import { makeHideOperation, parseBanResult, parseCeremony, parseDismissResult, parseEnrollment, parseHideResult, parseLoginOptions, parseReportQueue, parseSession, ProtocolError, validReason } from '../../src/admin/contracts';
 
 const id = '87a122fa-7537-4b88-9b77-b45d24a29714';
 const operationId = '4df8a775-7e7e-4707-a747-58d6c87d7019';
@@ -60,5 +60,27 @@ describe('bounded atomic hide operations', () => {
     expect(() => makeHideOperation(['../../secret'], 'reason')).toThrow();
     const ids = Array.from({ length: 101 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
     expect(() => makeHideOperation(ids, 'reason')).toThrow();
+  });
+});
+
+describe('report queue and decision results', () => {
+  const A = '00000000-0000-4000-8000-00000000000a';
+  const B = '00000000-0000-4000-8000-00000000000b';
+  const op = { operation_id: '00000000-0000-4000-8000-0000000000ff', stroke_ids: [A], reason: 'x' };
+  const item = { stroke_id: A, reports: 3, reporters: 2, reasons: ['hate'], block_requests: 1,
+    first_at: '2026-11-19T09:00:00Z', last_at: '2026-11-19T09:05:00Z', held: true, visible: false, x: 1.5, y: -2 };
+  it('accepts the documented queue shape and rejects unknown reasons or bad counts', () => {
+    expect(parseReportQueue({ open_reports: 3, items: [item] }).items[0]).toEqual(item);
+    for (const bad of [{ ...item, reasons: ['<script>'] }, { ...item, reports: -1 }, { ...item, x: Infinity }, { ...item, stroke_id: 'x' }]) {
+      expect(() => parseReportQueue({ open_reports: 1, items: [bad] })).toThrow();
+    }
+    expect(() => parseReportQueue({ open_reports: 0, items: Array(201).fill(item) })).toThrow();
+  });
+  it('binds dismiss and ban results to their operation', () => {
+    expect(parseDismissResult({ operation_id: op.operation_id, restored: [A], dismissed_reports: 3 }, op).restored).toEqual([A]);
+    expect(() => parseDismissResult({ operation_id: op.operation_id, restored: [B], dismissed_reports: 3 }, op)).toThrow();
+    expect(() => parseDismissResult({ operation_id: B, restored: [], dismissed_reports: 0 }, op)).toThrow();
+    expect(parseBanResult({ operation_id: op.operation_id, banned_authors: 1, hidden: [A, B] }, op).hidden).toEqual([A, B]);
+    expect(() => parseBanResult({ operation_id: op.operation_id, banned_authors: -1, hidden: [] }, op)).toThrow();
   });
 });

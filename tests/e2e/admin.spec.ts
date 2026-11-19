@@ -246,6 +246,7 @@ test('panning within the prefetched area neither resubscribes nor drops the sele
   await page.goto('/admin/'); await selectStroke(page);
   const selected = page.locator('.selection-list code');
   await expect(selected).toHaveCount(1);
+  await expect(page.locator('.reports')).toContainText('No open reports.');
   const subscriptions = () => state.messages.filter((m) => String(m.type).startsWith('viewport.subscribe')).length;
   const before = subscriptions();
   for (let i = 0; i < 20; i++) await page.mouse.wheel(10, 6);
@@ -257,4 +258,34 @@ test('panning within the prefetched area neither resubscribes nor drops the sele
   await expect.poll(subscriptions).toBeGreaterThan(before);
   await expect(page.locator('.world-status')).toHaveText('Shared world loaded');
   await expect(selected).toHaveCount(1);
+});
+
+test('report queue: show, dismiss a held stroke, ban an author; decisions use the operation log', async ({ page }) => {
+  const state = await adminServer(page, true);
+  state.reported = [{ stroke_id: SECOND_ID, held: true, reasons: ['hate', 'spam'] }, { stroke_id: STROKE_ID, held: false, reasons: ['sexual'] }];
+  await page.goto('/admin/');
+  const reports = page.locator('.reports');
+  await expect(reports.getByRole('heading')).toHaveText('Reports: 10 open');
+  await expect(reports.locator('li.report')).toHaveCount(2);
+  await expect(reports.locator('li.report').first()).toContainText('hate or harassment, spam');
+  await expect(reports.locator('li.report').first()).toContainText('Hidden by reports — awaiting decision');
+
+  await reports.locator('li.report').first().getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('heading')).toHaveText('Confirm dismissing the reports');
+  await page.getByRole('dialog').getByLabel('Reason', { exact: true }).fill('Not abusive');
+  await page.getByRole('dialog').getByRole('button', { name: 'Dismiss reports and restore', exact: true }).click();
+  await expect(page.getByRole('status').first()).toContainText('5 reports dismissed, 1 strokes restored');
+  await expect(reports.locator('li.report')).toHaveCount(1);
+  const dismiss = state.requests.find((r) => r.path === 'reports/dismiss')!;
+  expect(dismiss.body).toMatchObject({ stroke_ids: [SECOND_ID], reason: 'Not abusive' });
+
+  await reports.locator('li.report').first().getByRole('button', { name: 'Ban author', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Reason', { exact: true }).fill('Explicit content');
+  await page.getByRole('dialog').getByRole('button', { name: 'Ban author and hide all their strokes', exact: true }).click();
+  await expect(page.getByRole('status').first()).toContainText('1 author banned, 2 strokes hidden');
+  await expect(reports.locator('li.report')).toHaveCount(0);
+  await expect(reports).toContainText('No open reports.');
+  expect(state.banned).toBe(1);
+  // Only read-only WS traffic; decisions go through the authenticated HTTP API.
+  expect(state.messages.every((m) => ['hello', 'viewport.subscribe', 'viewport.subscribe.cached', 'viewport.fetch'].includes(String(m.type)))).toBe(true);
 });
