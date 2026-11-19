@@ -15,12 +15,12 @@ function privateHeaders(request: IncomingMessage, response: ServerResponse, next
 }
 
 // Match ServeDir's directory URLs in development and preview. Without this,
-// Vite's SPA fallback serves the canvas for the clean /about and /privacy URLs.
+// Vite's SPA fallback serves the canvas for the clean /about, /privacy and /terms URLs.
 function informationPageRedirect(request: IncomingMessage, response: ServerResponse, next: () => void): void {
   const url = request.url ?? '';
   const queryAt = url.indexOf('?');
   const path = queryAt < 0 ? url : url.slice(0, queryAt);
-  if (path === '/about' || path === '/privacy') {
+  if (path === '/about' || path === '/privacy' || path === '/terms') {
     response.writeHead(308, { Location: `${path}/${queryAt < 0 ? '' : url.slice(queryAt)}` });
     response.end();
     return;
@@ -41,6 +41,7 @@ export default defineConfig({
     admin: fileURLToPath(new URL('./admin/index.html', import.meta.url)),
     about: fileURLToPath(new URL('./about/index.html', import.meta.url)),
     privacy: fileURLToPath(new URL('./privacy/index.html', import.meta.url)),
+    terms: fileURLToPath(new URL('./terms/index.html', import.meta.url)),
   } } },
   // Vite's HTML/asset middleware otherwise overwrites earlier Cache-Control.
   // Development/preview responses are intentionally uncached; production uses backend headers.

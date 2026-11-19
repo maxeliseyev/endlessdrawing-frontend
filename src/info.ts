@@ -11,7 +11,9 @@ for (const element of document.querySelectorAll<HTMLElement>('[data-copy]')) {
   }
 }
 
-const privacy = document.body.dataset.page === 'privacy';
-document.title = privacy ? messages.privacyTitle : messages.aboutTitle;
-document.querySelector('meta[name="description"]')?.setAttribute('content',
-  privacy ? messages.privacyDescription : messages.aboutDescription);
+const page = document.body.dataset.page;
+const [title, description] = page === 'privacy' ? [messages.privacyTitle, messages.privacyDescription]
+  : page === 'terms' ? [messages.termsTitle, messages.termsDescription]
+    : [messages.aboutTitle, messages.aboutDescription];
+document.title = title;
+document.querySelector('meta[name="description"]')?.setAttribute('content', description);
