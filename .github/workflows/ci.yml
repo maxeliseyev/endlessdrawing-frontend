@@ -1,0 +1,75 @@
+name: Frontend CI
+
+# PRs: required check for the protected main. Merges to main: same checks, then the backend
+# Deploy production workflow is dispatched with this commit (docs-only merges are not deployed).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch backend Deploy production unless only docs changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_TOKEN: ${{ secrets.BACKEND_DEPLOY_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deployable=true
+          if [[ ! "$BEFORE" =~ ^0+$ ]]; then
+            files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$SHA" --jq '.files[].filename')
+            if [[ -n "$files" ]] && ! grep -qvE '^docs/|\.md$' <<<"$files"; then deployable=false; fi
+          fi
+          if [[ $deployable != true ]]; then
+            echo "Docs-only change: not deployed." >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          if [[ -z "$DEPLOY_TOKEN" ]]; then
+            echo "::error::BACKEND_DEPLOY_TOKEN is not configured; deploy manually from the backend Actions tab."
+            exit 1
+          fi
+          GH_TOKEN=$DEPLOY_TOKEN gh api -X POST \
+            repos/maxeliseyev/endlessdrawing-backend/actions/workflows/deploy.yml/dispatches \
+            -f ref=main -f "inputs[frontend_ref]=$SHA"
+          echo "Dispatched backend Deploy production with frontend $SHA." >> "$GITHUB_STEP_SUMMARY"
