@@ -8,6 +8,14 @@ export const STORAGE_KEYS = {
   session: 'endless-drawing.session.v1',
   // Own confirmed stroke UUIDs for undo; sessionStorage only.
   undo: 'endless-drawing.undo.v1',
+  // Custom colors drawn with, newest first (localStorage).
+  recentColors: 'endless-drawing.recent-colors.v1',
+  // Finger drawing: explicit menu choice and whether a pen was ever used (localStorage).
+  input: 'endless-drawing.input.v1',
+  // Reported stroke ids hidden on this device (localStorage).
+  hiddenStrokes: 'endless-drawing.hidden-strokes.v1',
+  // Blocked author tags: per viewer secret, so sessionStorage like the secret.
+  hiddenAuthors: 'endless-drawing.hidden-authors.v1',
 } as const;
 
 export interface StoragePort {
@@ -85,4 +93,20 @@ export function loadUndo(storage: StoragePort | undefined, max = 500): string[] 
   const value = load(storage, STORAGE_KEYS.undo);
   if (!Array.isArray(value)) return [];
   return value.filter((id): id is string => typeof id === 'string' && UUID.test(id)).slice(-max);
+}
+
+/** Strings matching `pattern`, at most `max` (the newest), for stored id/color lists. */
+export function loadList(storage: StoragePort | undefined, key: string, pattern: RegExp, max: number): string[] {
+  const value = load(storage, key);
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && pattern.test(item)).slice(-max);
+}
+
+export interface InputPreferences { finger?: boolean; penSeen: boolean }
+
+export function loadInput(storage: StoragePort | undefined): InputPreferences {
+  const value = load(storage, STORAGE_KEYS.input);
+  if (!value || typeof value !== 'object') return { penSeen: false };
+  const v = value as Record<string, unknown>;
+  return { penSeen: v.penSeen === true, ...(typeof v.finger === 'boolean' ? { finger: v.finger } : {}) };
 }

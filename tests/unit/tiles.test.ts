@@ -29,7 +29,7 @@ function setup(initial: Stroke[] = []) {
   const strokes = [...initial];
   const hidden = new Set<string>();
   const surfaces: FakeContext[] = [];
-  const cache = new TileCache({ strokes: () => [...strokes].sort((a, b) => a.seq - b.seq), hidden }, () => {
+  const cache = new TileCache({ strokes: () => [...strokes].sort((a, b) => a.seq - b.seq), isHidden: (s: Stroke) => hidden.has(s.id) }, () => {
     const context = new FakeContext();
     surfaces.push(context);
     return { canvas: { width: TILE_SIZE, height: TILE_SIZE }, context } as unknown as TileSurface;
@@ -124,7 +124,7 @@ describe('TileCache', () => {
     }
     expect(cache.size).toBeLessThanOrEqual(48);
     let count = 0;
-    const starved = new TileCache({ strokes: () => [], hidden: new Set() }, () => {
+    const starved = new TileCache({ strokes: () => [], isHidden: () => false }, () => {
       if (++count > 3) return undefined;
       return { canvas: { width: TILE_SIZE, height: TILE_SIZE }, context: new FakeContext() } as unknown as TileSurface;
     });

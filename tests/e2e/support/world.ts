@@ -11,6 +11,8 @@ interface Client { route: WebSocketRoute; secret: string; subscription: string;
 
 export interface MockWorld {
   strokes: Map<string, WireStroke & { owner: string; deleted: boolean }>;
+  // stroke.report requests (v5), in arrival order.
+  reports: { reporter: string; stroke_ids: string[]; reason: string; block_author: boolean }[];
   clients: Set<Client>;
   messages: Record<string, unknown>[];
   // Test controls.
@@ -28,14 +30,17 @@ export interface MockWorld {
 export function createMockWorld(): MockWorld {
   let seq = 0;
   const world: MockWorld = {
-    strokes: new Map(), clients: new Set(), messages: [], holdAcks: false, held: [], spawn: undefined, helloDelay: 0,
+    strokes: new Map(), reports: [], clients: new Set(), messages: [], holdAcks: false, held: [], spawn: undefined, helloDelay: 0,
     dropSockets() { for (const client of [...this.clients]) { this.clients.delete(client); void client.route.close({ code: 1012 }); } },
     releaseAcks() { const held = this.held.splice(0); for (const send of held) send(); },
     seed(stroke, owner = 'someone-else') { this.strokes.set(stroke.id, { ...stroke, seq: ++seq, owner, deleted: false }); },
   };
+  // v5 author tag: stable per (viewer, author), 22 base64url chars (not the real hash).
+  const authorTag = (viewer: string, owner: string) =>
+    Buffer.from(`${viewer}|${owner}`).toString('base64url').padEnd(22, 'A').slice(-22);
   const publicStroke = (stroke: WireStroke & { owner: string }, secret: string) => ({
     id: stroke.id, seq: stroke.seq, points: stroke.points, brush: stroke.brush, width: stroke.width,
-    color: stroke.color, opacity: stroke.opacity, own: stroke.owner === secret,
+    color: stroke.color, opacity: stroke.opacity, own: stroke.owner === secret, author: authorTag(secret, stroke.owner),
   });
   const send = (client: Client, message: unknown) => { try { client.route.send(Buffer.from(encodeMessagePack(message, SERVER_MESSAGE_BYTES))); } catch { /* closed */ } };
   const broadcast = (client: Client, message: unknown) => { if (client.manifest) client.manifest.events.push(message); else send(client, message); };
@@ -48,7 +53,7 @@ export function createMockWorld(): MockWorld {
       world.messages.push(message);
       if (message.type === 'hello') {
         client.secret = String(message.session_secret);
-        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 4, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 4 };
+        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 5, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 5 };
         if (world.helloDelay) setTimeout(() => send(client, ack), world.helloDelay); else send(client, ack);
       } else if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         const id = String(message.subscription_id);
@@ -100,6 +105,12 @@ export function createMockWorld(): MockWorld {
           }
         };
         if (world.holdAcks) world.held.push(deliver); else deliver();
+      } else if (message.type === 'stroke.report') {
+        const ids = message.stroke_ids as string[];
+        const bad = ids.find((id) => { const s = world.strokes.get(id); return !s || s.deleted || s.owner === client.secret; });
+        if (bad) { send(client, { type: 'error', request_id: message.request_id, code: 'not_found', message: 'gone' }); return; }
+        world.reports.push({ reporter: client.secret, stroke_ids: ids, reason: String(message.reason), block_author: message.block_author === true });
+        send(client, { type: 'ack', request_id: message.request_id, operation: 'stroke.report', report_id: crypto.randomUUID() });
       } else if (message.type === 'stroke.delete') {
         const stroke = world.strokes.get(String(message.stroke_id));
         if (!stroke) { send(client, { type: 'error', request_id: message.request_id, code: 'not_found', message: 'missing' }); return; }

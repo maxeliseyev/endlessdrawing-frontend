@@ -39,7 +39,7 @@ for (const dpr of [1, 2]) test.describe(`WebGL tile reuse at DPR ${dpr}`, () => 
         const camera = { x: 0, y: 0, zoom };
         let last = performance.now(), done: (() => void) | undefined;
         const renderer = createSceneRenderer(canvas, { camera: () => camera, viewport: () => viewport,
-          scene: { strokes: () => [stroke], hidden: new Set<string>() }, overlays: () => [],
+          scene: { strokes: () => [stroke], isHidden: () => false }, overlays: () => [],
           painted: () => { last = performance.now(); counts.frames++; done?.(); done = undefined; },
         });
         renderer.added(stroke); renderer.resize(viewport, devicePixelRatio);

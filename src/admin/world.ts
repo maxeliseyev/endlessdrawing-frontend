@@ -141,7 +141,7 @@ export class ReadOnlyWorld {
     this.manifest.start(subscription_id, cached);
     this.scene.subscribe(subscription_id, (this.codec?.protocolVersion ?? 1) >= 3); this.sentAt = Date.now(); this.changed('loading');
     this.socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds,
-      ...(this.codec?.protocolVersion === 4 ? { visible_bounds: this.visible } : {}) }));
+      ...((this.codec?.protocolVersion ?? 1) >= 4 ? { visible_bounds: this.visible } : {}) }));
     this.armDeadline(35_000);
   }
   private armDeadline(ms: number): void {
