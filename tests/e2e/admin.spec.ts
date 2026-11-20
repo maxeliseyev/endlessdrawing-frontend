@@ -103,6 +103,27 @@ test('selects foreign strokes, requires review/reason, cancels without a request
   expect(state.messages.every((m) => readOnlyMessages.includes(String(m.type)))).toBe(true);
 });
 
+test('the canvas selection can ban its authors without any report', async ({ page }) => {
+  const state = await adminServer(page, true);
+  await page.goto('/admin/');
+  await selectStroke(page);
+  await page.getByRole('button', { name: 'Ban authors…', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading')).toHaveText('Confirm banning the authors of these strokes');
+  await expect(dialog).toContainText(STROKE_ID);
+  await page.keyboard.press('Escape');
+  expect(state.requests.filter((r) => r.path === 'bans')).toHaveLength(0);
+  await page.getByRole('button', { name: 'Ban authors…', exact: true }).click();
+  await dialog.getByLabel('Reason', { exact: true }).fill('Repeated abuse');
+  await dialog.getByRole('button', { name: 'Ban and hide all their strokes', exact: true }).click();
+  await expect(page.getByRole('status').first()).toContainText('1 author banned, 2 strokes hidden');
+  const ban = state.requests.find((r) => r.path === 'bans')!;
+  expect(ban.body).toMatchObject({ stroke_ids: [STROKE_ID], reason: 'Repeated abuse' });
+  expect(state.banned).toBe(1);
+  await expect(page.getByRole('heading', { name: 'Selected strokes: 0 / 100' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ban authors…', exact: true })).toBeDisabled();
+});
+
 test('a possibly committed 503 is resolved by GET operation, not a false success or new UUID', async ({ page }) => {
   const state = await adminServer(page, true); state.hideMode = 'uncertain';
   await page.goto('/admin/'); await selectStroke(page); await review(page); await confirm(page);
@@ -281,7 +302,7 @@ test('report queue: show, dismiss a held stroke, ban an author; decisions use th
 
   await reports.locator('li.report').first().getByRole('button', { name: 'Ban author', exact: true }).click();
   await page.getByRole('dialog').getByLabel('Reason', { exact: true }).fill('Explicit content');
-  await page.getByRole('dialog').getByRole('button', { name: 'Ban author and hide all their strokes', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Ban and hide all their strokes', exact: true }).click();
   await expect(page.getByRole('status').first()).toContainText('1 author banned, 2 strokes hidden');
   await expect(reports.locator('li.report')).toHaveCount(0);
   await expect(reports).toContainText('No open reports.');
