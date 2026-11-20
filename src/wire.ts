@@ -36,6 +36,21 @@ export function parseStroke(value: unknown): Stroke {
     ...(typeof v.author === 'string' ? { author: v.author } : {}) };
 }
 
+/** Decode in integer space: each delta joins already-rounded points, without accumulated error. */
+export function decodeCompactPath(value: unknown): Point[] {
+  if (!Array.isArray(value) || value.length < 2 || value.length > MAX_POINTS * 2 || value.length % 2 !== 0 ||
+      !value.every(Number.isSafeInteger)) throw new ProtocolError();
+  const points: Point[] = [];
+  let x = 0, y = 0;
+  for (let i = 0; i < value.length; i += 2) {
+    x += value[i]; y += value[i + 1];
+    const point: Point = [x / 16, y / 16];
+    if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !isPoint(point)) throw new ProtocolError();
+    points.push(point);
+  }
+  return points;
+}
+
 // Optional hello.ack entry hint for a new session: a world point.
 export function parseSpawn(value: unknown): Point {
   const v = object(value);

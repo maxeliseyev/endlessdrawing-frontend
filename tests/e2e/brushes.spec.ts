@@ -2,8 +2,16 @@ import { expect, test, type Page } from '@playwright/test';
 import { canvasPixels } from '../support/pixels';
 import { useMockWorld } from './support/world';
 
-// The public canvas is server-backed; every page talks to a WS v1 test double.
-test.beforeEach(async ({ context }) => { await useMockWorld(context); });
+// The public canvas is server-backed; every page talks to a WS v6 test double.
+test.beforeEach(async ({ context }) => {
+  // This test compares rasterizers for identical geometry, not v6 quantization of a random spawn.
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('endless-drawing.camera.v1')) {
+      sessionStorage.setItem('endless-drawing.camera.v1', JSON.stringify({ x: 0, y: 0, zoom: 1 }));
+    }
+  });
+  await useMockWorld(context);
+});
 
 async function image(page: Page): Promise<string> {
   return page.locator('canvas').evaluate((c: HTMLCanvasElement) => c.toDataURL());

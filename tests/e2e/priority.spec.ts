@@ -1,5 +1,6 @@
 import { expect, test, type WebSocketRoute } from '@playwright/test';
-import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
+import { decodeMessagePack } from '../../src/transport/msgpack';
+import { compactServerPacket } from '../support/compact';
 import { canvasPixels } from '../support/pixels';
 
 test.use({ viewport: { width: 1000, height: 700 } });
@@ -9,14 +10,14 @@ for (const renderer of ['default', 'canvas2d']) test(`${renderer}: visible-first
   let socket: WebSocketRoute | undefined;
   let subscription: unknown;
   let request: Record<string, unknown> | undefined;
-  const send = (message: unknown) => socket!.send(Buffer.from(encodeMessagePack(message, SERVER_MESSAGE_BYTES)));
+  const send = (message: unknown) => socket!.send(Buffer.from(compactServerPacket(message)));
   const stroke = (seq: number, width: number, color: string) => ({ id: `00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}`,
     seq, own: false, points: [[-100, 0], [100, 0]], brush: 'round', width, color, opacity: 1 });
   await page.routeWebSocket('**/ws', (route) => {
     socket = route;
     route.onMessage((raw) => {
       const message = typeof raw === 'string' ? JSON.parse(raw) as Record<string, unknown> : decodeMessagePack(raw);
-      if (message.type === 'hello') send({ type: 'hello.ack', protocol_version: 5 });
+      if (message.type === 'hello') send({ type: 'hello.ack', protocol_version: 6 });
       if (message.type === 'viewport.subscribe') {
         request = message; subscription = message.subscription_id;
         send({ type: 'viewport.snapshot.begin', subscription_id: subscription });

@@ -1,7 +1,8 @@
-import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../../src/transport/msgpack';
+import { decodeMessagePack } from '../../../src/transport/msgpack';
+import { compactServerPacket } from '../../support/compact';
 import type { BrowserContext, Page, WebSocketRoute } from '@playwright/test';
 
-// Deterministic in-memory WS v1 server for public-canvas E2E. Mirrors the
+// Deterministic in-memory WS v6 server for public-canvas E2E. Mirrors the
 // backend semantics that the client relies on (own per secret, idempotent
 // create by UUID, owner-only delete, snapshot begin/chunk/end). It is a test
 // double, not proof of backend integration.
@@ -42,7 +43,7 @@ export function createMockWorld(): MockWorld {
     id: stroke.id, seq: stroke.seq, points: stroke.points, brush: stroke.brush, width: stroke.width,
     color: stroke.color, opacity: stroke.opacity, own: stroke.owner === secret, author: authorTag(secret, stroke.owner),
   });
-  const send = (client: Client, message: unknown) => { try { client.route.send(Buffer.from(encodeMessagePack(message, SERVER_MESSAGE_BYTES))); } catch { /* closed */ } };
+  const send = (client: Client, message: unknown) => { try { client.route.send(Buffer.from(compactServerPacket(message))); } catch { /* closed */ } };
   const broadcast = (client: Client, message: unknown) => { if (client.manifest) client.manifest.events.push(message); else send(client, message); };
   (world as MockWorld & { attach(route: WebSocketRoute): void }).attach = (route: WebSocketRoute) => {
     const client: Client = { route, secret: '', subscription: '' };
@@ -53,7 +54,7 @@ export function createMockWorld(): MockWorld {
       world.messages.push(message);
       if (message.type === 'hello') {
         client.secret = String(message.session_secret);
-        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 5, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 5 };
+        const ack = world.spawn ? { type: 'hello.ack', protocol_version: 6, spawn: world.spawn } : { type: 'hello.ack', protocol_version: 6 };
         if (world.helloDelay) setTimeout(() => send(client, ack), world.helloDelay); else send(client, ack);
       } else if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         const id = String(message.subscription_id);

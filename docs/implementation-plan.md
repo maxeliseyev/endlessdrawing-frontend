@@ -1,5 +1,14 @@
 # План реализации
 
+## WS v6 — 20.11.2026
+
+- [x] Общий public/admin кодек предлагает v6 перед v5, сохраняя все прежние профили. Контракт — только backend `docs/protocol-v6-compact.md`.
+- [x] Snapshot/fetch chunks, live и create ack: integer delta `path` → обычные immutable points. Проверяются integer MessagePack tags (даже float64(1) запрещён), safe sums/world bounds, 1…2000 точек, server array cap 4000 и chunk budget 8192 точек; uplink array cap 2000 прежний.
+- [x] Create/retry отправляют прежние float64 points. Renderer/cache/manifest используют прежнюю геометрию и не зависят от wire-формы.
+- [x] Backend Rust/TS v6 fixtures + SHA-256, malformed/profile tests и максимальная геометрия; синтетический out-of-world snapshot не ослабляет domain guards.
+- [x] `npm run check`, 242 unit tests, build, 253 E2E passed / 2 browser-specific skipped. Реальный backend/Postgres: Chromium/Firefox/WebKit (sync, undo, reload, brushes, manifest/fetch) на v6 и при `WS_COMPACT_ENABLED=false` на v5; профиль явно проверен через `E2E_EXPECT_WS_VERSION=6` / `5`. Откат — только для новых соединений, без отката backend image. Mock WS теперь отдаёт v6 path, тест равенства rasterizers использует фиксированную камеру без случайной sub-grid quantization.
+- [ ] Production rollout и физический iPad/browser acceptance — не выполнялись этой задачей.
+
 ## 1. Принятые решения фронтенда
 
 - Отдельный frontend-репозиторий; Vite-приложение в его корне. Соседний Rust-пакет не переносится.

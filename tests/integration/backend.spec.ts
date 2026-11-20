@@ -43,9 +43,11 @@ async function open(browser: Browser, camera: { x: number; y: number }): Promise
   const received: Record<string, unknown>[] = [];
   frames.set(page, received);
   binaryFrames.set(page, 0);
+  let protocolVersion = 2;
   page.on('websocket', (socket) => socket.on('framereceived', (frame) => {
     if (typeof frame.payload !== 'string') binaryFrames.set(page, binaryFrames.get(page)! + 1);
-    const message = typeof frame.payload === 'string' ? JSON.parse(frame.payload) as Record<string, unknown> : decodeMessagePack(frame.payload);
+    const message = typeof frame.payload === 'string' ? JSON.parse(frame.payload) as Record<string, unknown> : decodeMessagePack(frame.payload, undefined, protocolVersion);
+    if (message.type === 'hello.ack') protocolVersion = Number(message.protocol_version);
     wireBytes.set(message, typeof frame.payload === 'string' ? new TextEncoder().encode(frame.payload).length : frame.payload.length);
     received.push(message);
   }));
@@ -53,6 +55,9 @@ async function open(browser: Browser, camera: { x: number; y: number }): Promise
   // HTML load is not WebSocket/snapshot readiness, especially over staging WAN TLS.
   await expect.poll(() => received.some((frame) => frame.type === 'viewport.snapshot.end'),
     { timeout: 30_000 }).toBe(true);
+  if (process.env.E2E_EXPECT_WS_VERSION) {
+    expect(received.find((frame) => frame.type === 'hello.ack')?.protocol_version).toBe(Number(process.env.E2E_EXPECT_WS_VERSION));
+  }
   if (process.env.E2E_WS_PROFILE === 'json') expect(binaryFrames.get(page)).toBe(0);
   else expect(binaryFrames.get(page)).toBeGreaterThan(0);
   return page;
