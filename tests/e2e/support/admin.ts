@@ -1,5 +1,6 @@
-export const binary = (value: unknown) => Buffer.from(encodeMessagePack(value, SERVER_MESSAGE_BYTES));
-import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../../src/transport/msgpack';
+export const binary = (value: unknown) => Buffer.from(compactServerPacket(value));
+import { compactServerPacket } from '../../support/compact';
+import { decodeMessagePack } from '../../../src/transport/msgpack';
 import { expect, type Page, type WebSocketRoute } from '@playwright/test';
 
 export const TEST_PASSWORD = 'test-only-password-at-least-20-characters';
@@ -177,7 +178,7 @@ export async function adminServer(page: Page, authenticated = false) {
     const socket = { route, subscription: '' }; state.sockets.push(socket);
     route.onMessage((data) => {
       const message = typeof data === 'string' ? JSON.parse(data) as Record<string, unknown> : decodeMessagePack(data); state.messages.push(message);
-      if (message.type === 'hello') route.send(binary({ type: 'hello.ack', protocol_version: 5 }));
+      if (message.type === 'hello') route.send(binary({ type: 'hello.ack', protocol_version: 6 }));
       if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         socket.subscription = message.subscription_id as string;
         if (message.type === 'viewport.subscribe.cached') { route.send(binary({ type: 'viewport.snapshot.fallback', subscription_id: socket.subscription, reason: 'busy' })); return; }

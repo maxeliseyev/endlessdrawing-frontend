@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRESET_COLORS, RECENT_COLORS, useRecentColor, type Stroke } from '../../src/model';
 import { SharedScene } from '../../src/scene';
 import { fingersDraw, HiddenContent, MAX_REPORT_STROKES, toggleTarget } from '../../src/safety';
-import { SAFETY_PROTOCOL, socketCodec, WS_PROTOCOLS } from '../../src/transport/codec';
+import { COMPACT_PROTOCOL, SAFETY_PROTOCOL, socketCodec, WS_PROTOCOLS } from '../../src/transport/codec';
 import { decodeMessagePack, encodeMessagePack, SERVER_MESSAGE_BYTES } from '../../src/transport/msgpack';
 import { parseStroke } from '../../src/wire';
 import { SharedWorld, type Notice } from '../../src/world';
@@ -82,7 +82,7 @@ describe('local hiding and report selection', () => {
 
 describe('protocol v5', () => {
   it('is offered first and parses the per-viewer author tag', () => {
-    expect(WS_PROTOCOLS[0]).toBe(SAFETY_PROTOCOL);
+    expect(WS_PROTOCOLS.slice(0, 2)).toEqual([COMPACT_PROTOCOL, SAFETY_PROTOCOL]);
     expect(socketCodec(SAFETY_PROTOCOL).protocolVersion).toBe(5);
     expect((parseStroke(wire(A, 1, false, TAG_A)) as Stroke).author).toBe(TAG_A);
     expect('author' in parseStroke(wire(A, 1, false))).toBe(false);
