@@ -50,6 +50,7 @@ aside h2 { margin: 0; }
 .report-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .report-actions button { min-height: 26px; padding: 0 8px; font-size: 12px; }
 .selection-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.selection-actions .danger:not(:disabled) { border-color: #c85345; color: #a63b2f; }
 ul { padding: 0; list-style: none; }
 .selection-list { max-height: 36vh; overflow: auto; }
 .selection-list li { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 7px 0; }

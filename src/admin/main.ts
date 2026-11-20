@@ -337,7 +337,7 @@ function enterWorld(value: AdminSession): void {
   const dialogError = required<HTMLElement>(dialog, '.form-error');
   let pending: { kind: Decision; payload: HideOperation; state: 'sending' | 'unknown' | 'rejected'; error?: string } | undefined;
   let confirmedIds: readonly string[] = [];
-  // What the open dialog decides: the canvas selection (hide) or one reported stroke (any decision).
+  // What the open dialog decides: the canvas selection (hide or ban) or one reported stroke (any decision).
   let target: { kind: Decision; fromSelection: boolean } = { kind: 'hide', fromSelection: true };
   const reportsTitle = required<HTMLElement>(layout, '.reports-title');
   const reportsList = required<HTMLElement>(layout, '.reports-list');
@@ -409,7 +409,13 @@ function enterWorld(value: AdminSession): void {
     if (!view || view.status !== 'ready' || pending || !view.selection.length) return;
     openDialog('hide', view.selection, true);
   });
-  required(layout, '.selection-actions').append(clear, review);
+  // Any selected stroke, reported or not: bans its author(s) and hides all their strokes (POST /api/admin/bans).
+  const banAuthors = button(t.banSelection, () => {
+    if (!view || view.status !== 'ready' || pending || !view.selection.length) return;
+    openDialog('ban', view.selection, true);
+  });
+  banAuthors.className = 'danger';
+  required(layout, '.selection-actions').append(clear, review, banAuthors);
   required<HTMLButtonElement>(dialog, '.cancel').onclick = () => dialog.close();
   dialog.addEventListener('close', () => {
     // close is asynchronous: an old event must not clear a newly reopened form.
@@ -435,7 +441,7 @@ function enterWorld(value: AdminSession): void {
       li.append(code, remove); list.append(li);
     }
     clear.disabled = !!pending || !ids.length;
-    review.disabled = !!pending || !ids.length || state !== 'ready';
+    review.disabled = banAuthors.disabled = !!pending || !ids.length || state !== 'ready';
     reload.disabled = select.disabled = hand.disabled = !!pending;
     view?.lock(!!pending || dialog.open);
   }
