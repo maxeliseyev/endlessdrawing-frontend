@@ -16,7 +16,7 @@ for (const renderer of ['default', 'canvas2d']) test(`${renderer}: visible-first
     socket = route;
     route.onMessage((raw) => {
       const message = typeof raw === 'string' ? JSON.parse(raw) as Record<string, unknown> : decodeMessagePack(raw);
-      if (message.type === 'hello') send({ type: 'hello.ack', protocol_version: 4 });
+      if (message.type === 'hello') send({ type: 'hello.ack', protocol_version: 5 });
       if (message.type === 'viewport.subscribe') {
         request = message; subscription = message.subscription_id;
         send({ type: 'viewport.snapshot.begin', subscription_id: subscription });

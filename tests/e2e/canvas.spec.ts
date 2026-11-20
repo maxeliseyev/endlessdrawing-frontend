@@ -109,8 +109,16 @@ test('palette stays inside viewport and is operable by keyboard, then closes on 
   expect(box.x + box.width).toBeLessThanOrEqual(size.width - 7);
   expect(box.y + box.height).toBeLessThanOrEqual(size.height - 7);
   await expect(page.getByRole('button', { name: 'Кисть', exact: true })).toBeFocused();
+  // Header controls (⋯, close) come first, then the tools; Tab wraps around.
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Закрыть инструменты', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Ещё', exact: true })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(page.getByRole('button', { name: 'Увеличить', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Ещё', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Кисть', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');

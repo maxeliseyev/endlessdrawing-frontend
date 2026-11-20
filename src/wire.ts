@@ -20,6 +20,9 @@ export function uuid(value: unknown): string {
   return id.toLowerCase();
 }
 
+// v5 author tag: first 16 bytes of a SHA-256, unpadded base64url.
+const AUTHOR = /^[A-Za-z0-9_-]{22}$/;
+
 // Points are frozen: completed geometry is immutable, which lets renderer
 // caches key on identity.
 export function parseStroke(value: unknown): Stroke {
@@ -27,8 +30,10 @@ export function parseStroke(value: unknown): Stroke {
   if (!isBrush(v) || !Array.isArray(v.points) || v.points.length < 1 || v.points.length > MAX_POINTS ||
       !v.points.every(isPoint) || !Number.isSafeInteger(v.seq) || (v.seq as number) <= 0 || typeof v.own !== 'boolean') throw new ProtocolError();
   const points = Object.freeze(v.points.map(([x, y]: Point) => Object.freeze([x, y] as const))) as unknown as Point[];
+  if (v.author !== undefined && (typeof v.author !== 'string' || !AUTHOR.test(v.author))) throw new ProtocolError();
   return { id: uuid(v.id), seq: v.seq as number, own: v.own, points,
-    brush: v.brush, width: v.width, color: v.color.toUpperCase(), opacity: v.opacity };
+    brush: v.brush, width: v.width, color: v.color.toUpperCase(), opacity: v.opacity,
+    ...(typeof v.author === 'string' ? { author: v.author } : {}) };
 }
 
 // Optional hello.ack entry hint for a new session: a world point.

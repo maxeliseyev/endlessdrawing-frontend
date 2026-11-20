@@ -60,6 +60,8 @@ export class SharedScene {
   private respectSnapshotDeletes = false;
   private readonly loadingAcks = new Map<string, Stroke>();
   private scope: Bounds | undefined;
+  // Reported strokes / blocked authors hidden on this device only (never sent to the server).
+  private filter: ((stroke: Stroke) => boolean) | undefined;
   revision = 0;
 
   /**
@@ -83,6 +85,25 @@ export class SharedScene {
     this.loadingAcks.clear();
     this.tombstones.clear();
     this.phase = 'loading';
+  }
+
+  /** Not drawn: an own delete in flight, or hidden locally by a report / blocked author. */
+  isHidden(stroke: Stroke): boolean {
+    return this.hidden.has(stroke.id) || (this.filter?.(stroke) ?? false);
+  }
+
+  /**
+   * Replace the local hiding predicate (call again after its data changed):
+   * the listener learns exactly which strokes entered or left the drawn set.
+   */
+  setFilter(filter: ((stroke: Stroke) => boolean) | undefined): void {
+    const ids = new Set(this.confirmed.keys());
+    for (const id of this.staging?.keys() ?? []) ids.add(id);
+    const before = new Map<string, Stroke | undefined>();
+    for (const id of ids) before.set(id, this.drawn(id));
+    this.filter = filter;
+    for (const id of ids) this.report(id, before.get(id));
+    this.touch();
   }
 
   /** A drawn (or hidden) stroke by id, staged or confirmed. */
@@ -290,7 +311,8 @@ export class SharedScene {
   }
 
   private drawn(id: string): Stroke | undefined {
-    return this.hidden.has(id) ? undefined : this.get(id);
+    const stroke = this.hidden.has(id) ? undefined : this.get(id);
+    return stroke && this.filter?.(stroke) ? undefined : stroke;
   }
 
   // Tell the listener whether `id` entered or left the drawn set.

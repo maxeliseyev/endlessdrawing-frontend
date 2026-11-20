@@ -4,9 +4,10 @@ import { CodecError } from './transport/msgpack';
 import { clipVisibleBounds, type Bounds } from './camera';
 import { newId, type Point, type StrokeDraft } from './model';
 import { SharedScene } from './scene';
+import { isReportReason, MAX_REPORT_STROKES, type ReportReason } from './safety';
 import { parseSpawn, parseStroke, ProtocolError, uuid } from './wire';
 
-export type Notice = 'offline' | 'rejected' | 'deleteFailed' | 'pendingLimit' | 'dense' | 'protocol';
+export type Notice = 'offline' | 'rejected' | 'deleteFailed' | 'pendingLimit' | 'dense' | 'protocol' | 'banned';
 
 export interface UndoStore {
   load(): string[];
@@ -16,10 +17,14 @@ export interface UndoStore {
 export const MAX_UNDO = 500;
 // Server sliding windows are 5 creates/s and 20 deletes/s per connection.
 // Keep a small margin for clock skew between the two windows.
-const LIMITS = { create: { count: 5, window: 1100 }, delete: { count: 20, window: 1100 } } as const;
+// Reports are also limited to 10 per hour per author on the server (persisted).
+const LIMITS = { create: { count: 5, window: 1100 }, delete: { count: 20, window: 1100 }, report: { count: 5, window: 1100 } } as const;
+const MAX_QUEUED_REPORTS = 20;
 const ACK_TIMEOUT = 12_000;
 
-type Op = { kind: 'create'; id: string } | { kind: 'delete'; id: string; undo: boolean };
+type Op = { kind: 'create'; id: string } | { kind: 'delete'; id: string; undo: boolean }
+  // `id` is local only; the server de-duplicates by request_id within one connection.
+  | { kind: 'report'; id: string; strokeIds: string[]; reason: ReportReason; blockAuthor: boolean };
 interface InFlight { op: Op; deadline: number }
 
 export interface WorldOptions {
@@ -50,7 +55,7 @@ export class SharedWorld {
   private subscribeSentAt = 0;
   private readonly queue: Op[] = [];
   private readonly inFlight = new Map<string, InFlight>();
-  private readonly sent = { create: [] as number[], delete: [] as number[] };
+  private readonly sent = { create: [] as number[], delete: [] as number[], report: [] as number[] };
   private undoStack: string[];
   private readonly timers: Record<'reconnect' | 'subscribe' | 'flush' | 'deadline' | 'offline' | 'ack', ReturnType<typeof setTimeout> | undefined> =
     { reconnect: undefined, subscribe: undefined, flush: undefined, deadline: undefined, offline: undefined, ack: undefined };
@@ -124,6 +129,17 @@ export class SharedWorld {
     this.scene.hide(id);
     this.enqueue({ kind: 'delete', id, undo: false });
     this.options.changed();
+  }
+
+  /**
+   * Report strokes of other authors (protocol v5). The caller already hid them
+   * locally; delivery is best effort and survives reconnects while the tab lives.
+   */
+  report(strokeIds: readonly string[], reason: ReportReason, blockAuthor: boolean): void {
+    const ids = [...new Set(strokeIds)].slice(0, MAX_REPORT_STROKES);
+    if (!ids.length || !isReportReason(reason)) return;
+    if (this.queue.filter((op) => op.kind === 'report').length >= MAX_QUEUED_REPORTS) return;
+    this.enqueue({ kind: 'report', id: newId(), strokeIds: ids, reason, blockAuthor });
   }
 
   /** Ctrl/⌘+Z / palette undo: the newest unconfirmed create, else the newest confirmed one. */
@@ -280,6 +296,8 @@ export class SharedWorld {
       this.scene.confirm(stroke);
       this.pushUndo(stroke.id);
       if (cancelled) this.queue.push({ kind: 'delete', id: stroke.id, undo: true });
+    } else if (flight.op.kind === 'report' && message.operation === 'stroke.report') {
+      uuid(message.report_id);
     } else if (flight.op.kind === 'delete' && message.operation === 'stroke.delete') {
       if (uuid(message.stroke_id) !== flight.op.id) throw new ProtocolError();
       this.scene.remove(flight.op.id);
@@ -303,9 +321,12 @@ export class SharedWorld {
       this.timers.flush = setTimeout(() => this.flush(), 1200);
       return;
     }
-    if (op.kind === 'create') {
+    if (code === 'banned') this.options.notice('banned');
+    if (op.kind === 'report') {
+      // Already hidden locally; a report the server refuses (gone, own, limit) is dropped.
+    } else if (op.kind === 'create') {
       // stroke_deleted: it was committed and deleted elsewhere (e.g. moderation).
-      if (code !== 'stroke_deleted') this.options.notice('rejected');
+      if (code !== 'stroke_deleted' && code !== 'banned') this.options.notice('rejected');
       this.scene.dropPending(op.id);
     } else if (code === 'not_found') {
       this.scene.remove(op.id);
@@ -335,7 +356,10 @@ export class SharedWorld {
       this.queue.splice(index, 1);
       const request_id = newId();
       let payload: unknown;
-      if (op.kind === 'create') {
+      if (op.kind === 'report') {
+        if ((this.codec?.protocolVersion ?? 1) < 5) continue; // the server rolled back to v4: nothing to send to
+        payload = { type: 'stroke.report', request_id, stroke_ids: op.strokeIds, reason: op.reason, block_author: op.blockAuthor };
+      } else if (op.kind === 'create') {
         const item = this.scene.pending.get(op.id);
         if (!item) continue;
         item.sent = true;
@@ -363,7 +387,7 @@ export class SharedWorld {
     this.subscribeSentAt = Date.now();
     this.subscribedBounds = this.bounds;
     socket.send(this.codec!.encode({ type: cached ? 'viewport.subscribe.cached' : 'viewport.subscribe', subscription_id, bounds: this.bounds,
-      ...(this.codec?.protocolVersion === 4 ? { visible_bounds: this.visible } : {}) }));
+      ...((this.codec?.protocolVersion ?? 1) >= 4 ? { visible_bounds: this.visible } : {}) }));
     this.armDeadline(35_000);
   }
 

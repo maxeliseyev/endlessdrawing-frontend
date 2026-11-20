@@ -2,14 +2,18 @@ import './style.css';
 import { resolveLocale, translations } from './i18n';
 import {
   clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
-  visibleBounds, wheelPixels, wheelZoomFactor, zoomAt, zoomOf, type Camera, type Viewport,
+  visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport,
 } from './camera';
-import { appendPoint, fitsCreateMessage, newId, strokeExtent, type Point, type StrokeDraft } from './model';
+import {
+  appendPoint, fitsCreateMessage, newId, RECENT_COLORS, strokeExtent, useRecentColor, type Point, type StrokeDraft,
+} from './model';
 import { Palette, toolCursor } from './palette';
+import { ReportUI } from './report';
+import { fingersDraw, HiddenContent, toggleTarget, type ReportTarget } from './safety';
 import { createHitContext, hitTest } from './renderer';
 import { createSceneRenderer, type SceneRenderer } from './scene-renderer';
 import {
-  browserStorage, loadCamera, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS, storedCamera,
+  browserStorage, loadCamera, loadInput, loadList, loadPreferences, loadSessionSecret, loadUndo, save, STORAGE_KEYS, storedCamera,
 } from './storage';
 import { MAX_UNDO, SharedWorld, type Notice } from './world';
 
@@ -53,8 +57,17 @@ let space = false;
 // movement (no button) drags the canvas along with it.
 let hover: Point | undefined;
 let cameraDirty = false;
-// Once a pen is used, fingers only navigate (palm/hand on the screen).
-let penSeen = false;
+// Fingers draw until a pen is first used (then they only navigate: palm/hand on
+// the screen), unless chosen explicitly in the ⋯ menu. Remembered like on iPad.
+let input = loadInput(local);
+const HEX = /^#[\dA-F]{6}$/;
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
+const AUTHOR = /^[A-Za-z0-9_-]{22}$/;
+let recentColors = loadList(local, STORAGE_KEYS.recentColors, HEX, RECENT_COLORS);
+let hiddenContent = new HiddenContent(
+  loadList(local, STORAGE_KEYS.hiddenStrokes, UUID, 5000), loadList(session, STORAGE_KEYS.hiddenAuthors, AUTHOR, 1000));
+// Report mode: taps select other people's strokes; fingers and the mouse still pan.
+let reportSelection: ReportTarget[] = [];
 const touches = new Map<number, Point>();
 let longPress: { timer: ReturnType<typeof setTimeout>; pointerId: number; origin: Point } | undefined;
 
@@ -87,6 +100,7 @@ const renderer: SceneRenderer = createSceneRenderer(canvas, {
     return drafts;
   },
   painted: () => {
+    if (report.active) outlineSelection();
     if (!cameraDirty) return;
     save(session, STORAGE_KEYS.camera, camera);
     cameraDirty = false;
@@ -104,6 +118,20 @@ const palette = new Palette(preferences, {
   },
   restoreFocus: () => canvas.focus({ preventScroll: true }),
   undo: () => undo(),
+  menu: () => ({
+    canReport: true,
+    hasHidden: !hiddenContent.isEmpty,
+    fingerDrawing: navigator.maxTouchPoints > 0 ? fingersDraw(input.finger, input.penSeen) : undefined,
+  }),
+  report: () => startReporting(),
+  showHidden: () => {
+    hiddenContent = new HiddenContent();
+    persistHidden();
+  },
+  setFingerDrawing: (on) => {
+    input = { ...input, finger: on };
+    save(local, STORAGE_KEYS.input, input);
+  },
   zoom: (direction) => {
     const center: Point = [viewport.width / 2, viewport.height / 2];
     const zoom = direction === 'reset' ? 1 : zoomOf(camera) * (direction === 'in' ? ZOOM_STEP : 1 / ZOOM_STEP);
@@ -112,6 +140,24 @@ const palette = new Palette(preferences, {
 }, messages, locale);
 app.append(palette.element);
 palette.setZoom(zoomOf(camera));
+palette.setRecentColors(recentColors);
+
+const report = new ReportUI(messages, {
+  cancel: () => stopReporting(),
+  send: (reason, blockAuthor) => {
+    const targets = reportSelection;
+    stopReporting();
+    if (!targets.length) return;
+    const authors = blockAuthor ? targets.flatMap((t) => (t.author ? [t.author] : [])) : [];
+    hiddenContent = hiddenContent.hide(targets.map((t) => t.id), authors);
+    persistHidden();
+    world.report(targets.map((t) => t.id), reason, blockAuthor);
+    notify(messages.reportThanks);
+  },
+});
+app.append(report.outlines, report.bar, report.dialog);
+// Reported strokes and blocked authors stay hidden on this device.
+applyHidden();
 
 const status = document.createElement('p');
 status.className = 'error-notice';
@@ -135,7 +181,77 @@ function noticeText(notice: Notice): string {
 }
 
 function updateCursor(): void {
-  canvas.style.cursor = gesture?.kind === 'pan' ? 'grabbing' : space ? 'grab' : toolCursor(preferences.tool);
+  canvas.style.cursor = gesture?.kind === 'pan' ? 'grabbing' : space ? 'grab' : report.active ? 'pointer' : toolCursor(preferences.tool);
+}
+
+function applyHidden(): void {
+  const content = hiddenContent;
+  world.scene.setFilter(content.isEmpty ? undefined : (stroke) => content.hides(stroke));
+  renderer.invalidate();
+}
+
+function persistHidden(): void {
+  save(local, STORAGE_KEYS.hiddenStrokes, hiddenContent.storedStrokes);
+  save(session, STORAGE_KEYS.hiddenAuthors, hiddenContent.storedAuthors);
+  applyHidden();
+}
+
+function startReporting(): void {
+  releaseGesture(true);
+  palette.close(false);
+  reportSelection = [];
+  report.start();
+  outlineSelection();
+  updateCursor();
+}
+
+function stopReporting(): void {
+  reportSelection = [];
+  report.stop();
+  updateCursor();
+  canvas.focus({ preventScroll: true });
+}
+
+/** The topmost stroke of someone else under a tap (generous for fingers), like the iPad app. */
+function reportTargetAt(screen: Point): ReportTarget | undefined {
+  const point = toWorld(screen);
+  const strokes = world.scene.strokes();
+  const tolerance = 12 / zoomOf(camera);
+  const probe = { min_x: point[0] - tolerance, min_y: point[1] - tolerance, max_x: point[0] + tolerance, max_y: point[1] + tolerance };
+  for (let index = strokes.length - 1; index >= 0; index--) {
+    const stroke = strokes[index]!;
+    if (stroke.own || world.scene.isHidden(stroke) || !intersects(strokeExtent(stroke), probe)) continue;
+    if (hitTest(hitContext, stroke, point, camera, viewport, 12)) return { id: stroke.id, author: stroke.author };
+  }
+  return undefined;
+}
+
+function toggleReportAt(screen: Point): void {
+  const target = reportTargetAt(screen);
+  if (!target) return;
+  reportSelection = toggleTarget(reportSelection, target);
+  report.setCount(reportSelection.length);
+  outlineSelection();
+}
+
+function outlineSelection(): void {
+  report.outline(reportSelection.flatMap((target) => {
+    const stroke = world.scene.get(target.id);
+    if (!stroke) return [];
+    const e = strokeExtent(stroke);
+    const [x0, y0] = worldToScreen([e.min_x, e.min_y], camera, viewport);
+    const [x1, y1] = worldToScreen([e.max_x, e.max_y], camera, viewport);
+    return [{ x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) }];
+  }));
+}
+
+/** Remembers a custom color the moment a stroke starts with it (presets never repeat). */
+function rememberColor(color: string): void {
+  const next = useRecentColor(recentColors, color);
+  if (next.join() === recentColors.join()) return;
+  recentColors = next;
+  save(local, STORAGE_KEYS.recentColors, recentColors);
+  palette.setRecentColors(recentColors);
 }
 
 // Smoothed direction of the current pan, used to prefetch ahead of the view.
@@ -225,13 +341,15 @@ function begin(event: PointerEvent): void {
   const point = localPoint(event);
   const type = event.pointerType;
   const { pointerId } = event;
-  if (event.button === 1 || space || preferences.tool === 'hand' || (type === 'touch' && penSeen)) {
+  if (event.button === 1 || space || preferences.tool === 'hand' || report.active ||
+      (type === 'touch' && !fingersDraw(input.finger, input.penSeen))) {
     gesture = { kind: 'pan', pointerId, type, origin: point, camera: { ...camera } };
   } else if (preferences.tool === 'eraser') {
     gesture = { kind: 'erase', pointerId, type, origin: point, moved: type !== 'touch' };
     // A finger erases on movement or tap, so a long press can open tools instead.
     if (type !== 'touch') eraseAt(point);
   } else {
+    rememberColor(preferences.color);
     gesture = {
       kind: 'draw', pointerId, type,
       stroke: {
@@ -241,7 +359,7 @@ function begin(event: PointerEvent): void {
     };
   }
   try { canvas.setPointerCapture(pointerId); } catch { /* pointer already gone */ }
-  if (type === 'touch') startLongPress(event);
+  if (type === 'touch' && !report.active) startLongPress(event);
   renderer.invalidate();
   updateCursor();
 }
@@ -300,7 +418,12 @@ canvas.addEventListener('pointerdown', (event) => {
     return;
   }
   if (event.pointerType === 'pen') {
-    penSeen = true;
+    if (!input.penSeen) {
+      input = { ...input, penSeen: true };
+      save(local, STORAGE_KEYS.input, input);
+      // Told once, only when fingers actually stop drawing.
+      if (input.finger === undefined && navigator.maxTouchPoints > 0) notify(messages.penNowDraws);
+    }
     // The pen wins over any finger gesture in progress.
     if (gesture && (gesture.kind === 'pinch' || gesture.kind === 'blocked' || gesture.type === 'touch')) releaseGesture(false);
   }
@@ -378,6 +501,10 @@ canvas.addEventListener('pointerup', (event) => {
     commit(gesture.stroke);
   } else if (gesture.kind === 'erase' && !gesture.moved) {
     eraseAt(localPoint(event));
+  } else if (gesture.kind === 'pan' && report.active) {
+    // A tap (not a drag) selects or deselects the stroke under it.
+    const point = localPoint(event);
+    if (Math.hypot(point[0] - gesture.origin[0], point[1] - gesture.origin[1]) <= TOUCH_SLOP) toggleReportAt(point);
   }
   releaseGesture(false);
 });
@@ -459,6 +586,12 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && palette.isOpen) {
     event.preventDefault();
     palette.close();
+    return;
+  }
+  // The dialog closes itself on Escape; the report bar then still waits.
+  if (event.key === 'Escape' && report.active && !report.dialogOpen) {
+    event.preventDefault();
+    stopReporting();
     return;
   }
   if (!keyboardInCanvas(event)) return;

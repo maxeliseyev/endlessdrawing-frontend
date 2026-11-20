@@ -24,6 +24,8 @@ export interface StrokeDraft extends Brush {
 export interface Stroke extends StrokeDraft {
   seq: number;
   own: boolean;
+  /** v5: per-viewer author tag (22-char base64url), for reports and local blocking. */
+  author?: string;
 }
 
 export interface Preferences extends Brush {
@@ -37,6 +39,17 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
   color: '#202020',
   opacity: 1,
 };
+
+/** Same presets as the iPad app, in the same order. */
+export const PRESET_COLORS = ['#202020', '#E46C60', '#E9AF59', '#69A27F', '#7195D0', '#AD8ACB'] as const;
+export const RECENT_COLORS = 7;
+
+/** Custom colors actually drawn with, newest first; presets never repeat here (as on iPad). */
+export function useRecentColor(recent: readonly string[], color: string): string[] {
+  const upper = color.toUpperCase();
+  if ((PRESET_COLORS as readonly string[]).includes(upper) || !/^#[\dA-F]{6}$/.test(upper)) return [...recent];
+  return [upper, ...recent.filter((c) => c !== upper)].slice(0, RECENT_COLORS);
+}
 
 export function isTool(value: unknown): value is Tool {
   return value === 'brush' || value === 'hand' || value === 'eraser';

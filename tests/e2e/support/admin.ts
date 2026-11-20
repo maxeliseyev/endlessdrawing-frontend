@@ -177,7 +177,7 @@ export async function adminServer(page: Page, authenticated = false) {
     const socket = { route, subscription: '' }; state.sockets.push(socket);
     route.onMessage((data) => {
       const message = typeof data === 'string' ? JSON.parse(data) as Record<string, unknown> : decodeMessagePack(data); state.messages.push(message);
-      if (message.type === 'hello') route.send(binary({ type: 'hello.ack', protocol_version: 4 }));
+      if (message.type === 'hello') route.send(binary({ type: 'hello.ack', protocol_version: 5 }));
       if (message.type === 'viewport.subscribe' || message.type === 'viewport.subscribe.cached') {
         socket.subscription = message.subscription_id as string;
         if (message.type === 'viewport.subscribe.cached') { route.send(binary({ type: 'viewport.snapshot.fallback', subscription_id: socket.subscription, reason: 'busy' })); return; }

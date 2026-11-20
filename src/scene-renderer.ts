@@ -28,7 +28,7 @@ export interface SceneRenderer extends SceneListener {
 export interface FrameInput {
   camera(): Camera;
   viewport(): Viewport;
-  /** Confirmed drawn candidates by seq plus hidden ids (the shared scene). */
+  /** Confirmed drawn candidates by seq plus what is hidden (the shared scene). */
   scene: TileSource;
   /** Unconfirmed own strokes then the live preview, drawn on top in this order. */
   overlays(): readonly StrokeDraft[];
@@ -89,9 +89,9 @@ export class Canvas2DSceneRenderer implements SceneRenderer {
     if (frame.direct) {
       // No canvas memory for tiles: draw the visible scene directly.
       const bounds = visibleBounds(view, viewport);
-      const { hidden } = input.scene;
-      for (const stroke of input.scene.strokes()) {
-        if (hidden.has(stroke.id) || !intersects(strokeExtent(stroke), bounds)) continue;
+      const { scene } = input;
+      for (const stroke of scene.strokes()) {
+        if (scene.isHidden(stroke) || !intersects(strokeExtent(stroke), bounds)) continue;
         drawStroke(context, stroke, view, viewport);
       }
     }

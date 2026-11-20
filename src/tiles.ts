@@ -30,9 +30,9 @@ const SPARE = 8;
 const LEVEL = Math.SQRT2;
 
 export interface TileSource {
-  /** Drawn candidates sorted by seq (may include hidden ids). */
+  /** Drawn candidates sorted by seq (may include hidden ones). */
   strokes(): readonly Stroke[];
-  readonly hidden: ReadonlySet<string>;
+  isHidden(stroke: Stroke): boolean;
 }
 
 export interface TileSurface {
@@ -217,10 +217,10 @@ export class TileCache {
     context.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     const originX = (tile.tx * TILE_SIZE) / scale;
     const originY = (tile.ty * TILE_SIZE) / scale;
-    const hidden = this.source.hidden;
+    const source = this.source;
     let maxSeq = 0;
-    for (const stroke of this.source.strokes()) {
-      if (hidden.has(stroke.id) || !intersects(tile.bounds, strokeExtent(stroke))) continue;
+    for (const stroke of source.strokes()) {
+      if (source.isHidden(stroke) || !intersects(tile.bounds, strokeExtent(stroke))) continue;
       drawProjected(context, stroke, scale, originX, originY);
       maxSeq = Math.max(maxSeq, stroke.seq);
     }
