@@ -1,4 +1,5 @@
 import './style.css';
+import { startWebAnalytics } from './analytics';
 import { resolveLocale, translations } from './i18n';
 import {
   clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
@@ -26,6 +27,8 @@ type Gesture =
   | { kind: 'erase'; pointerId: number; type: string; origin: Point; moved: boolean }
   | { kind: 'pinch'; a: number; b: number; a0: Point; b0: Point; camera: Camera }
   | { kind: 'blocked' };
+
+startWebAnalytics();
 
 const LONG_PRESS_MS = 500;
 const TOUCH_SLOP = 10; // CSS px of finger movement that still counts as "holding still"
