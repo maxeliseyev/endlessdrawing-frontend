@@ -13,6 +13,7 @@ export function resolveLocale(languages: readonly string[], language?: string): 
 
 const en = {
   canvasLabel: 'Endless Drawing — canvas. Right-click, long-press or press Shift+F10 to open tools.',
+  canvasCenterCoordinates: 'Canvas center coordinates',
   paletteLabel: 'Drawing tools',
   toolLabel: 'Tool',
   brush: 'Brush',
@@ -83,6 +84,7 @@ export type Messages = typeof en;
 
 const ru: Messages = {
   canvasLabel: 'Endless Drawing — холст. Правый клик, долгое нажатие или Shift+F10 открывает инструменты.',
+  canvasCenterCoordinates: 'Координаты центра холста',
   paletteLabel: 'Инструменты рисования',
   toolLabel: 'Инструмент',
   brush: 'Кисть',

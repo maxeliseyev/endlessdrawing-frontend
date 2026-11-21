@@ -1,5 +1,6 @@
 import './style.css';
 import { startWebAnalytics } from './analytics';
+import { CanvasCoordinates } from './coordinates';
 import { resolveLocale, translations } from './i18n';
 import {
   clampWorld, intersects, needsResubscribe, panScreen, pinch, screenToWorld, subscriptionBounds,
@@ -53,6 +54,8 @@ let preferences = loadPreferences(local);
 // `welcome`) unless the visitor moves first; a reload keeps its camera.
 let awaitingSpawn = storedCamera(session) === undefined;
 let camera = loadCamera(session);
+const coordinates = new CanvasCoordinates(messages.canvasCenterCoordinates, camera);
+app.append(coordinates.element);
 let viewport: Viewport = { width: window.innerWidth, height: window.innerHeight };
 let gesture: Gesture | undefined;
 let space = false;
@@ -105,6 +108,7 @@ const renderer: SceneRenderer = createSceneRenderer(canvas, {
   painted: () => {
     if (report.active) outlineSelection();
     if (!cameraDirty) return;
+    coordinates.update(camera);
     save(session, STORAGE_KEYS.camera, camera);
     cameraDirty = false;
   },

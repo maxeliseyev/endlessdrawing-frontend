@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { canvasPixels } from '../support/pixels';
+import { coordinateText } from '../../src/coordinates';
 import { createMockWorld, useMockWorld, type MockWorld } from './support/world';
 
 // Pointer sequences are dispatched as synthetic PointerEvents so the input
@@ -61,6 +62,7 @@ test('a second finger cancels the unfinished stroke and pinch-zooms; the leftove
     await pointer(page, 'pointermove', 2, 600 + i * 20, 300);
   }
   await expect.poll(async () => (await cam(page)).zoom).toBeCloseTo(2.25, 3);
+  await expect(page.locator('.canvas-coordinates')).toHaveText(coordinateText(await cam(page)));
   await pointer(page, 'pointerup', 2, 700, 300);
   // The remaining finger moves but must not start a stroke.
   await pointer(page, 'pointermove', 1, 300, 400);
@@ -84,6 +86,7 @@ test('two-finger pan without spreading keeps the zoom', async ({ page }) => {
   await pointer(page, 'pointerup', 1, 360, 280);
   await pointer(page, 'pointerup', 2, 460, 280);
   await expect.poll(() => cam(page)).toEqual({ x: 40, y: 20, zoom: 1 });
+  await expect(page.locator('.canvas-coordinates')).toHaveText('x: 40  y: 20');
   expect(creates()).toBe(0);
 });
 
