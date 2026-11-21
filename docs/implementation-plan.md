@@ -1,5 +1,14 @@
 # План реализации
 
+## Координаты центра экрана — 21.11.2026
+
+- [x] Явное исключение владельца из «только холст»: пассивная строка `x: …  y: …` слева внизу, 11px monospace, серый, без фона/рамки/zoom/кнопок. Safe area, без перехвата mouse/touch и tab stop; screen reader получает EN/RU описание без live-announcements.
+- [x] Целые world units центра камеры, симметричное округление и отсутствие `−0`. Панорамирование, anchored zoom/pinch, spawn и восстановленная камера отображают одну и ту же систему координат; resize сам по себе центр не меняет.
+- [x] Обновление через существующий renderer RAF, без нового цикла кадров; DOM не меняется, пока округлённые координаты прежние. Данные не связываются с аналитикой, новых Storage/WS полей нет. Только публичный веб-холст; нативное приложение не менялось.
+- [x] Unit tests для форматирования и DOM deduplication; браузерные проверки WebGL2/Canvas2D, pan/zoom/reload/resize/spawn, world edges на узком экране, pinch и ввода через строку координат.
+- [x] Typecheck, 274 unit tests и production build; Chromium/Firefox/WebKit: 286 E2E passed / 2 browser-specific skips. Визуально проверен скриншот строки на белом холсте.
+- [ ] Production rollout и физический Safari/iPad acceptance.
+
 ## WS v6 — 20.11.2026
 
 - [x] Общий public/admin кодек предлагает v6 перед v5, сохраняя все прежние профили. Контракт — только backend `docs/protocol-v6-compact.md`.

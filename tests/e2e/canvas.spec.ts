@@ -81,7 +81,8 @@ test('opens directly on a white canvas: brand metadata, no welcome/banner/panel'
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([64, 64]);
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('status')).toBeHidden();
-  expect(await page.locator('body').innerText()).toBe('');
+  await expect(page.getByRole('group', { name: 'Координаты центра холста' })).toHaveText('x: 0  y: 0');
+  expect(await page.locator('body').innerText()).toBe('x: 0  y: 0');
   await expect(page.locator('canvas')).toHaveAttribute('data-renderer', 'webgl');
   await expect.poll(() => pixel(page, 50, 50)).toEqual([255, 255, 255, 255]);
   const rect = await page.locator('canvas').boundingBox();

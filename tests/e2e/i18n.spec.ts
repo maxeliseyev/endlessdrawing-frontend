@@ -47,7 +47,9 @@ for (const scenario of scenarios) {
       await expect(page.locator('html')).toHaveAttribute('lang', scenario.expected);
       await expect(page).toHaveTitle('Endless Drawing');
       await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', SITE_DESCRIPTION);
-      expect(await page.locator('body').innerText()).toBe('');
+      await expect(page.locator('.canvas-coordinates')).toHaveText(/^x: [−\d]+\s+y: [−\d]+$/);
+      await expect(page.locator('.canvas-coordinates')).toHaveAccessibleName(scenario.expected === 'ru' ? 'Координаты центра холста' : 'Canvas center coordinates');
+      expect(await page.locator('body').innerText()).toBe(await page.locator('.canvas-coordinates').innerText());
       await expect(page.locator('canvas')).toHaveAccessibleName(ui.canvas);
 
       await page.locator('canvas').focus();
@@ -80,7 +82,7 @@ for (const scenario of scenarios) {
       await expect(page.getByRole('textbox', { name: ui.hex })).toHaveValue('#E46C60');
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
-      expect(await page.locator('body').innerText()).toBe('');
+      expect(await page.locator('body').innerText()).toBe(await page.locator('.canvas-coordinates').innerText());
     });
   });
 }
