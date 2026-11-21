@@ -9,6 +9,15 @@
 - [x] `npm run check`, 242 unit tests, build, 253 E2E passed / 2 browser-specific skipped. Реальный backend/Postgres: Chromium/Firefox/WebKit (sync, undo, reload, brushes, manifest/fetch) на v6 и при `WS_COMPACT_ENABLED=false` на v5; профиль явно проверен через `E2E_EXPECT_WS_VERSION=6` / `5`. Откат — только для новых соединений, без отката backend image. Mock WS теперь отдаёт v6 path, тест равенства rasterizers использует фиксированную камеру без случайной sub-grid quantization.
 - [ ] Production rollout и физический iPad/browser acceptance — не выполнялись этой задачей.
 
+## Cloudflare Web Analytics — 21.11.2026
+
+- [x] По решению владельца — приблизительные посещения по периодам и странам, без собственной аналитической инфраструктуры. Публичный beacon token предоставлен владельцем.
+- [x] Один async beacon в production только на `https://endlessdrawing.com` и публичных страницах; `/admin/`, API, dev/preview/другие origin исключены. Никаких custom events или связки с состоянием холста; `spa: false`. Сбой/блокировка аналитики не мешает рисованию.
+- [x] `/privacy`: EN/RU и статический английский, отдельное описание Cloudflare, новая дата; удалено прежнее утверждение об отсутствии аналитики на сайте. Native iPad аналитика не добавляется.
+- [x] Unit guards и браузерная проверка реального production build со stub beacon: публичные страницы, отсутствие на admin, работающее рисование при блокировщике; локальные тесты не отправляют настоящую аналитику.
+- [x] `npm run check`, 267 unit tests, production build; Chromium/Firefox/WebKit: 268 E2E passed / 2 browser-specific skips. Включены production origin со stub beacon, admin exclusion, блокировщик и privacy без JS.
+- [ ] Deploy и подтверждение первых посещений/стран в панели Cloudflare. Автоинъекцию не включать поверх ручного счётчика.
+
 ## 1. Принятые решения фронтенда
 
 - Отдельный frontend-репозиторий; Vite-приложение в его корне. Соседний Rust-пакет не переносится.
