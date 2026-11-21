@@ -1,4 +1,7 @@
 import { infoTranslations, resolveLocale } from './i18n';
+import { startWebAnalytics } from './analytics';
+
+startWebAnalytics();
 
 const locale = resolveLocale(navigator.languages, navigator.language);
 const messages = infoTranslations[locale];
