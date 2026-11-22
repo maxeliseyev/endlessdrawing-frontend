@@ -190,3 +190,49 @@ input[aria-invalid='true'] { border-color: #c85345; }
   .report-dialog label { min-height: 44px; }
   .report-dialog .buttons button { height: 44px; }
 }
+
+/* Save image: a panel at the bottom with a live preview, a dashed frame with corner handles. */
+.export-panel {
+  position: fixed; z-index: 1; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; row-gap: 8px; align-items: center;
+  grid-template-areas: 'preview head' 'preview hint' 'preview options' 'preview note' 'preview actions';
+  width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 12px;
+  border: 1px solid #e1e1e1; border-radius: 12px; background: #fffffff2; box-shadow: 0 4px 18px #0000001a; font-size: 14px; color: #333;
+}
+.export-panel[hidden] { display: none; }
+.export-preview { grid-area: preview; align-self: start; border: 1px solid #e6e6e6; border-radius: 6px; background: #fff; }
+.export-preview.transparent { background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 12px 12px; }
+.export-head { grid-area: head; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.export-summary { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.export-hint { grid-area: hint; }
+.export-note { grid-area: note; }
+.export-hint, .export-note { margin: 0; color: #777; font-size: 12px; line-height: 1.4; }
+.export-size { font-variant-numeric: tabular-nums; }
+.export-options { grid-area: options; display: flex; flex-wrap: wrap; gap: 8px; }
+.segmented { display: inline-flex; border: 1px solid #e1e1e1; border-radius: 8px; overflow: hidden; }
+.segmented button { height: 32px; padding: 0 10px; border: 0; border-right: 1px solid #e1e1e1; background: #fff; color: #444; font: inherit; }
+.segmented button:last-child { border-right: 0; }
+.segmented button[aria-pressed='true'] { background: #242424; color: #fff; }
+.export-actions { grid-area: actions; display: flex; justify-content: flex-end; gap: 8px; }
+.export-actions button { height: 36px; padding: 0 16px; border: 1px solid #e1e1e1; border-radius: 999px; background: #fff; color: #444; font: inherit; white-space: nowrap; }
+.export-actions .primary { border-color: #242424; background: #242424; color: #fff; }
+.export-actions .primary:disabled { border-color: #cfcfcf; background: #cfcfcf; cursor: default; }
+.export-frame { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
+.export-frame rect { fill: none; stroke: #487bc0; stroke-width: 2; stroke-dasharray: 6 4; }
+.export-frame circle { fill: #fff; stroke: #487bc0; stroke-width: 2; pointer-events: all; cursor: nwse-resize; touch-action: none; }
+.export-frame circle[data-corner='1'], .export-frame circle[data-corner='3'] { cursor: nesw-resize; }
+/* Phones: a compact sheet that leaves most of the drawing visible. */
+@media (max-width: 599px) {
+  .export-panel {
+    left: 16px; right: 16px; width: auto; transform: none; padding: 10px 12px; column-gap: 12px;
+    grid-template-areas: 'head head' 'preview options' 'note note' 'actions actions';
+  }
+  .export-hint { display: none; }
+  .export-options { flex-direction: column; align-items: flex-start; }
+}
+@media (pointer: coarse) {
+  .segmented button { height: 40px; }
+  .export-actions button, .export-head .icon-button { height: 44px; }
+  .export-head .icon-button { width: 44px; }
+  .export-frame circle { r: 12px; }
+}

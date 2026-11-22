@@ -24,6 +24,7 @@ export interface PaletteActions {
   zoom: (direction: 'in' | 'out' | 'reset') => void;
   menu: () => MenuState;
   report: () => void;
+  exportImage: () => void;
   showHidden: () => void;
   setFingerDrawing: (on: boolean) => void;
 }
@@ -72,6 +73,7 @@ export class Palette {
         </div>
         <div class="palette-menu" role="menu" aria-label="${messages.more}" hidden>
           <button type="button" role="menuitem" data-action="report">${messages.reportDrawing}</button>
+          <button type="button" role="menuitem" data-action="export">${messages.saveImage}</button>
           <button type="button" role="menuitem" data-action="show-hidden">${messages.showHidden}</button>
           <button type="button" role="menuitemcheckbox" data-action="finger" aria-checked="false">${messages.drawWithFinger}</button>
           <a role="menuitem" href="/terms" target="_blank" rel="noopener">${messages.termsOfUse}</a>
@@ -139,6 +141,7 @@ export class Palette {
       if (action === 'menu') this.toggleMenu();
       else if (action === 'close') this.close();
       else if (action === 'report') { this.closeMenu(false); this.close(false); this.actions.report(); }
+      else if (action === 'export') { this.closeMenu(false); this.close(false); this.actions.exportImage(); }
       else if (action === 'show-hidden') { this.closeMenu(); this.actions.showHidden(); }
       else if (action === 'finger') {
         const on = button.getAttribute('aria-checked') !== 'true';

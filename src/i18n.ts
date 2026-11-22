@@ -76,6 +76,25 @@ const en = {
   cancel: 'Cancel',
   send: 'Send',
   reportThanks: 'Thanks. Hidden for you — we review reports within 24 hours.',
+  // Save image: PNG of chosen authors only (mine by default).
+  saveImage: 'Save image…',
+  exportLabel: 'Save image',
+  exportHint: 'Tap drawings to add or remove their author',
+  exportSummary: (own: boolean, authors: number) => {
+    const others = `${authors} ${authors === 1 ? 'author' : 'authors'}`;
+    if (own) return authors ? `My drawings + ${others}` : 'My drawings';
+    return authors ? others : 'Nothing selected';
+  },
+  exportScale: 'Size',
+  exportBackground: 'Background',
+  exportTransparent: 'Transparent',
+  exportWhite: 'White',
+  exportPixels: (width: number, height: number) => `${width} × ${height} px`,
+  exportLoadedOnly: 'Only drawings loaded around the view',
+  exportFit: 'Fit to drawings',
+  exportSave: 'Save PNG',
+  cancelExport: 'Close',
+  exportFailed: 'Couldn’t save the image. Try a smaller size.',
   banned: 'Drawing is no longer available for this device because of a moderation decision.',
 };
 
@@ -145,6 +164,27 @@ const ru: Messages = {
   cancel: 'Отмена',
   send: 'Отправить',
   reportThanks: 'Спасибо. Скрыто у вас — мы рассмотрим жалобу в течение 24 часов.',
+  saveImage: 'Сохранить картинку…',
+  exportLabel: 'Сохранить картинку',
+  exportHint: 'Коснитесь рисунка, чтобы добавить или убрать его автора',
+  exportSummary: (own: boolean, authors: number) => {
+    const mod10 = authors % 10, mod100 = authors % 100;
+    const word = mod10 === 1 && mod100 !== 11 ? 'автор'
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'автора' : 'авторов';
+    const others = `${authors} ${word}`;
+    if (own) return authors ? `Мои рисунки + ${others}` : 'Мои рисунки';
+    return authors ? others : 'Ничего не выбрано';
+  },
+  exportScale: 'Размер',
+  exportBackground: 'Фон',
+  exportTransparent: 'Прозрачный',
+  exportWhite: 'Белый',
+  exportPixels: (width: number, height: number) => `${width} × ${height} пкс`,
+  exportLoadedOnly: 'Только рисунки, загруженные вокруг экрана',
+  exportFit: 'По рисункам',
+  exportSave: 'Сохранить PNG',
+  cancelExport: 'Закрыть',
+  exportFailed: 'Не удалось сохранить картинку. Попробуйте размер поменьше.',
   banned: 'Рисование на этом устройстве недоступно по решению модерации.',
 };
 

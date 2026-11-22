@@ -7,10 +7,16 @@ import {
   visibleBounds, wheelPixels, wheelZoomFactor, worldToScreen, zoomAt, zoomOf, type Camera, type Viewport,
 } from './camera';
 import {
-  appendPoint, fitsCreateMessage, newId, RECENT_COLORS, strokeExtent, useRecentColor, type Point, type StrokeDraft,
+  appendPoint, fitsCreateMessage, newId, RECENT_COLORS, strokeExtent, useRecentColor, type Extent, type Point, type Stroke,
+  type StrokeDraft,
 } from './model';
 import { Palette, toolCursor } from './palette';
-import { ReportUI } from './report';
+import { ReportUI, type ScreenRect } from './report';
+import {
+  DEFAULT_SELECTION, download, exportFileName, exportSize, frameFor, inFrame, isEmptySelection, normalizeFrame,
+  paintExport, renderPNG, selectStrokes, toggleAuthor, type ExportBackground, type ExportScale, type ExportSelection,
+} from './export';
+import { ExportUI, type Corner } from './export-ui';
 import { fingersDraw, HiddenContent, toggleTarget, type ReportTarget } from './safety';
 import { createHitContext, hitTest } from './renderer';
 import { createSceneRenderer, type SceneRenderer } from './scene-renderer';
@@ -74,6 +80,14 @@ let hiddenContent = new HiddenContent(
   loadList(local, STORAGE_KEYS.hiddenStrokes, UUID, 5000), loadList(session, STORAGE_KEYS.hiddenAuthors, AUTHOR, 1000));
 // Report mode: taps select other people's strokes; fingers and the mouse still pan.
 let reportSelection: ReportTarget[] = [];
+// Save-image mode: whose strokes go into the PNG (mine by default) and the frame,
+// which follows the selection until a corner is dragged.
+let exportSelection: ExportSelection = DEFAULT_SELECTION;
+let exportScale: ExportScale = 2;
+let exportBackground: ExportBackground = 'white';
+let exportFrame: Extent | undefined;
+let exportManual = false;
+let exportContent: { strokes: readonly Stroke[]; pending: string; selection: ExportSelection; frame: Extent | undefined; options: string } | undefined;
 const touches = new Map<number, Point>();
 let longPress: { timer: ReturnType<typeof setTimeout>; pointerId: number; origin: Point } | undefined;
 
@@ -107,6 +121,7 @@ const renderer: SceneRenderer = createSceneRenderer(canvas, {
   },
   painted: () => {
     if (report.active) outlineSelection();
+    if (exporter.active) refreshExport();
     if (!cameraDirty) return;
     coordinates.update(camera);
     save(session, STORAGE_KEYS.camera, camera);
@@ -131,6 +146,7 @@ const palette = new Palette(preferences, {
     fingerDrawing: navigator.maxTouchPoints > 0 ? fingersDraw(input.finger, input.penSeen) : undefined,
   }),
   report: () => startReporting(),
+  exportImage: () => startExporting(),
   showHidden: () => {
     hiddenContent = new HiddenContent();
     persistHidden();
@@ -163,6 +179,15 @@ const report = new ReportUI(messages, {
   },
 });
 app.append(report.outlines, report.bar, report.dialog);
+
+const exporter = new ExportUI(app, messages, {
+  close: () => stopExporting(),
+  save: () => saveExport(),
+  fit: () => { exportManual = false; exportFrame = undefined; refreshExport(); },
+  scale: (scale) => { exportScale = scale; exporter.setOptions(exportScale, exportBackground); refreshExport(); },
+  background: (background) => { exportBackground = background; exporter.setOptions(exportScale, exportBackground); refreshExport(); },
+  resize: (corner, client) => resizeExportFrame(corner, client),
+});
 // Reported strokes and blocked authors stay hidden on this device.
 applyHidden();
 
@@ -188,7 +213,7 @@ function noticeText(notice: Notice): string {
 }
 
 function updateCursor(): void {
-  canvas.style.cursor = gesture?.kind === 'pan' ? 'grabbing' : space ? 'grab' : report.active ? 'pointer' : toolCursor(preferences.tool);
+  canvas.style.cursor = gesture?.kind === 'pan' ? 'grabbing' : space ? 'grab' : selecting() ? 'pointer' : toolCursor(preferences.tool);
 }
 
 function applyHidden(): void {
@@ -203,7 +228,11 @@ function persistHidden(): void {
   applyHidden();
 }
 
+/** Report and save-image modes: taps pick strokes, fingers and the mouse only pan. */
+function selecting(): boolean { return report.active || exporter.active; }
+
 function startReporting(): void {
+  if (exporter.active) stopExporting();
   releaseGesture(true);
   palette.close(false);
   reportSelection = [];
@@ -219,23 +248,24 @@ function stopReporting(): void {
   canvas.focus({ preventScroll: true });
 }
 
-/** The topmost stroke of someone else under a tap (generous for fingers), like the iPad app. */
-function reportTargetAt(screen: Point): ReportTarget | undefined {
+/** The topmost drawn stroke under a tap (generous for fingers), like the iPad app. */
+function strokeAt(screen: Point, includeOwn: boolean): Stroke | undefined {
   const point = toWorld(screen);
   const strokes = world.scene.strokes();
   const tolerance = 12 / zoomOf(camera);
   const probe = { min_x: point[0] - tolerance, min_y: point[1] - tolerance, max_x: point[0] + tolerance, max_y: point[1] + tolerance };
   for (let index = strokes.length - 1; index >= 0; index--) {
     const stroke = strokes[index]!;
-    if (stroke.own || world.scene.isHidden(stroke) || !intersects(strokeExtent(stroke), probe)) continue;
-    if (hitTest(hitContext, stroke, point, camera, viewport, 12)) return { id: stroke.id, author: stroke.author };
+    if ((stroke.own && !includeOwn) || world.scene.isHidden(stroke) || !intersects(strokeExtent(stroke), probe)) continue;
+    if (hitTest(hitContext, stroke, point, camera, viewport, 12)) return stroke;
   }
   return undefined;
 }
 
 function toggleReportAt(screen: Point): void {
-  const target = reportTargetAt(screen);
-  if (!target) return;
+  const stroke = strokeAt(screen, false);
+  if (!stroke) return;
+  const target: ReportTarget = { id: stroke.id, author: stroke.author };
   reportSelection = toggleTarget(reportSelection, target);
   report.setCount(reportSelection.length);
   outlineSelection();
@@ -250,6 +280,99 @@ function outlineSelection(): void {
     const [x1, y1] = worldToScreen([e.max_x, e.max_y], camera, viewport);
     return [{ x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) }];
   }));
+}
+
+function startExporting(): void {
+  if (report.active) stopReporting();
+  releaseGesture(true);
+  palette.close(false);
+  exportSelection = DEFAULT_SELECTION;
+  exportManual = false;
+  exportFrame = undefined;
+  exportContent = undefined;
+  exporter.setManual(false);
+  exporter.start(exportScale, exportBackground);
+  refreshExport();
+  updateCursor();
+}
+
+function stopExporting(): void {
+  exporter.stop();
+  exportContent = undefined;
+  updateCursor();
+  canvas.focus({ preventScroll: true });
+}
+
+function exportStrokes(): StrokeDraft[] {
+  return selectStrokes(world.scene.strokes(), world.scene.visiblePending(), exportSelection, (stroke) => world.scene.isHidden(stroke));
+}
+
+function toggleExportAt(screen: Point): void {
+  const stroke = strokeAt(screen, true);
+  if (!stroke) return;
+  exportSelection = toggleAuthor(exportSelection, stroke);
+  refreshExport();
+}
+
+/** Keeps the frame, summary and preview in step with the selection, the scene and the camera. */
+function refreshExport(): void {
+  const strokes = exportStrokes();
+  const frame = exportManual ? exportFrame : frameFor(strokes);
+  exporter.setManual(exportManual);
+  exporter.frame(frame && screenRect(frame));
+  // The preview and size only change with content, not with the camera.
+  const pending = world.scene.visiblePending().map((draft) => draft.id).join();
+  const options = `${exportScale}/${exportBackground}`;
+  const content = { strokes: world.scene.strokes(), pending, selection: exportSelection, frame, options };
+  const previous = exportContent;
+  if (previous && previous.strokes === content.strokes && previous.pending === pending && previous.selection === exportSelection &&
+      previous.options === options && sameFrame(previous.frame, frame)) return;
+  exportContent = content;
+  exporter.setSummary(isEmptySelection(exportSelection) ? messages.exportHint : messages.exportSummary(exportSelection.own, exportSelection.authors.length));
+  const visible = frame ? inFrame(strokes, frame) : [];
+  if (!frame || !visible.length) {
+    exporter.setSize(undefined);
+    exporter.drawPreview(undefined, () => {});
+    return;
+  }
+  const size = exportSize(frame, exportScale);
+  exporter.setSize(messages.exportPixels(size.width, size.height));
+  const width = frame.max_x - frame.min_x;
+  exporter.drawPreview(width / (frame.max_y - frame.min_y), (context, pixels) => {
+    paintExport(context, visible, frame, pixels / width, exportBackground);
+  });
+}
+
+function sameFrame(a: Extent | undefined, b: Extent | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.min_x === b.min_x && a.min_y === b.min_y && a.max_x === b.max_x && a.max_y === b.max_y;
+}
+
+function screenRect(frame: Extent): ScreenRect {
+  const [x0, y0] = worldToScreen([frame.min_x, frame.min_y], camera, viewport);
+  const [x1, y1] = worldToScreen([frame.max_x, frame.max_y], camera, viewport);
+  return { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) };
+}
+
+function resizeExportFrame(corner: Corner, client: readonly [number, number]): void {
+  const frame = exportManual ? exportFrame : frameFor(exportStrokes());
+  if (!frame) return;
+  // The opposite corner stays where it is.
+  const fixed: Point = [corner === 0 || corner === 3 ? frame.max_x : frame.min_x, corner === 0 || corner === 1 ? frame.max_y : frame.min_y];
+  exportFrame = normalizeFrame(toWorld(localPoint({ clientX: client[0], clientY: client[1] })), fixed);
+  exportManual = true;
+  refreshExport();
+}
+
+function saveExport(): void {
+  const strokes = exportStrokes();
+  const frame = exportManual ? exportFrame : frameFor(strokes);
+  if (!frame || !inFrame(strokes, frame).length) return;
+  exporter.setBusy(true);
+  void renderPNG(strokes, frame, exportScale, exportBackground)
+    .then((blob) => { if (blob) download(blob, exportFileName(frame)); else notify(messages.exportFailed); })
+    .catch(() => notify(messages.exportFailed))
+    .finally(() => exporter.setBusy(false));
 }
 
 /** Remembers a custom color the moment a stroke starts with it (presets never repeat). */
@@ -348,7 +471,7 @@ function begin(event: PointerEvent): void {
   const point = localPoint(event);
   const type = event.pointerType;
   const { pointerId } = event;
-  if (event.button === 1 || space || preferences.tool === 'hand' || report.active ||
+  if (event.button === 1 || space || preferences.tool === 'hand' || selecting() ||
       (type === 'touch' && !fingersDraw(input.finger, input.penSeen))) {
     gesture = { kind: 'pan', pointerId, type, origin: point, camera: { ...camera } };
   } else if (preferences.tool === 'eraser') {
@@ -366,7 +489,7 @@ function begin(event: PointerEvent): void {
     };
   }
   try { canvas.setPointerCapture(pointerId); } catch { /* pointer already gone */ }
-  if (type === 'touch' && !report.active) startLongPress(event);
+  if (type === 'touch' && !selecting()) startLongPress(event);
   renderer.invalidate();
   updateCursor();
 }
@@ -508,10 +631,12 @@ canvas.addEventListener('pointerup', (event) => {
     commit(gesture.stroke);
   } else if (gesture.kind === 'erase' && !gesture.moved) {
     eraseAt(localPoint(event));
-  } else if (gesture.kind === 'pan' && report.active) {
-    // A tap (not a drag) selects or deselects the stroke under it.
+  } else if (gesture.kind === 'pan' && selecting()) {
+    // A tap (not a drag) selects or deselects the stroke (report) or its author (save image).
     const point = localPoint(event);
-    if (Math.hypot(point[0] - gesture.origin[0], point[1] - gesture.origin[1]) <= TOUCH_SLOP) toggleReportAt(point);
+    if (Math.hypot(point[0] - gesture.origin[0], point[1] - gesture.origin[1]) <= TOUCH_SLOP) {
+      if (exporter.active) toggleExportAt(point); else toggleReportAt(point);
+    }
   }
   releaseGesture(false);
 });
@@ -599,6 +724,11 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && report.active && !report.dialogOpen) {
     event.preventDefault();
     stopReporting();
+    return;
+  }
+  if (event.key === 'Escape' && exporter.active) {
+    event.preventDefault();
+    stopExporting();
     return;
   }
   if (!keyboardInCanvas(event)) return;
